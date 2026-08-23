@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { getTenant } from "@/server/lib/tenant";
-import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
+import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 
 const paginationSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
@@ -85,7 +85,7 @@ function filterEventsByWeek<
 }
 
 export const calendarRouter = createTRPCRouter({
-  searchEvents: publicProcedure
+  searchEvents: protectedProcedure
     .input(
       paginationSchema.extend({
         query: z.string(),
@@ -93,8 +93,8 @@ export const calendarRouter = createTRPCRouter({
         weekEnd: z.string().datetime(),
       }),
     )
-    .query(async ({ input }) => {
-      const tenant = getTenant();
+    .query(async ({ ctx, input }) => {
+      const tenant = getTenant(ctx.session.user.id);
       const weekStart = new Date(input.weekStart);
       const weekEnd = new Date(input.weekEnd);
 
@@ -118,15 +118,15 @@ export const calendarRouter = createTRPCRouter({
       );
     }),
 
-  refreshEvents: publicProcedure
+  refreshEvents: protectedProcedure
     .input(
       z.object({
         weekStart: z.string().datetime(),
         weekEnd: z.string().datetime(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const tenant = getTenant();
+    .mutation(async ({ ctx, input }) => {
+      const tenant = getTenant(ctx.session.user.id);
       const result = await tenant.googlecalendar.api.events.getMany({
         calendarId: "primary",
         timeMin: input.weekStart,
@@ -140,7 +140,7 @@ export const calendarRouter = createTRPCRouter({
       };
     }),
 
-  createDraft: publicProcedure
+  createDraft: protectedProcedure
     .input(
       z.object({
         summary: z.string().min(1),
@@ -151,8 +151,8 @@ export const calendarRouter = createTRPCRouter({
         attendees: z.array(z.string().email()).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const tenant = getTenant();
+    .mutation(async ({ ctx, input }) => {
+      const tenant = getTenant(ctx.session.user.id);
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "none",
@@ -172,7 +172,7 @@ export const calendarRouter = createTRPCRouter({
       };
     }),
 
-  sendInvite: publicProcedure
+  sendInvite: protectedProcedure
     .input(
       z.object({
         summary: z.string().min(1),
@@ -183,8 +183,8 @@ export const calendarRouter = createTRPCRouter({
         attendees: z.array(z.string().email()).min(1),
       }),
     )
-    .mutation(async ({ input }) => {
-      const tenant = getTenant();
+    .mutation(async ({ ctx, input }) => {
+      const tenant = getTenant(ctx.session.user.id);
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "all",
