@@ -22,6 +22,10 @@ export const auth = betterAuth({
     "https://slimy-comfy-panorama.ngrok-free.dev",
   ],
 
+  emailAndPassword: {
+    enabled: true,
+  },
+
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID!,
