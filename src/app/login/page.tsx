@@ -1,55 +1,11 @@
-"use client";
-
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { LoginForm } from "@/components/login-form";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const { error } = await authClient.signIn.email({
-      email,
-      password,
-    });
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    window.location.href = "/";
-  };
-
   return (
-    <main>
-      <h1>Login</h1>
-
-      <form onSubmit={handleLogin}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-
-        <button type="submit">Login</button>
-      </form>
-
-      <p>
-        Don&apos;t have an account? <a href="/register">Create account</a>
-      </p>
-    </main>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <LoginForm />
+      </div>
+    </div>
   );
 }

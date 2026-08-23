@@ -1,65 +1,19 @@
-"use client";
+import { GalleryVerticalEndIcon } from "lucide-react";
 
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { SignupForm } from "@/components/signup-form";
 
 export default function RegisterPage() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const { error } = await authClient.signUp.email({
-      name,
-      email,
-      password,
-    });
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    window.location.href = "/";
-  };
-
   return (
-    <main>
-      <h1>Create account</h1>
-
-      <form onSubmit={handleRegister}>
-        <input
-          type="text"
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-
-        <button type="submit">Create account</button>
-      </form>
-
-      <p>
-        Already have an account? <a href="/login">Login</a>
-      </p>
-    </main>
+    <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+      <div className="flex w-full max-w-sm flex-col gap-6">
+        <div className="flex items-center gap-2 self-center font-medium">
+          <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
+            <GalleryVerticalEndIcon className="size-4" />
+          </div>
+          MailPoint
+        </div>
+        <SignupForm />
+      </div>
+    </div>
   );
 }
