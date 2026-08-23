@@ -1,129 +1,173 @@
-body {
-  margin: 0;
-  padding: 2rem 1.5rem;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 1rem;
-  line-height: 1.6;
-  color: #111;
-  background: #fff;
-  text-align: left;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.148 0.004 228.8);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.148 0.004 228.8);
+
+  --primary: oklch(0.5 0.134 242.749);
+  --primary-foreground: oklch(0.977 0.013 236.62);
+
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+
+  --muted: oklch(0.963 0.002 197.1);
+  --muted-foreground: oklch(0.56 0.021 213.5);
+
+  --accent: oklch(0.963 0.002 197.1);
+  --accent-foreground: oklch(0.218 0.008 223.9);
+
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: oklch(0.925 0.005 214.3);
+  --input: oklch(0.925 0.005 214.3);
+  --ring: oklch(0.723 0.014 214.4);
+
+  --chart-1: oklch(0.872 0.007 219.6);
+  --chart-2: oklch(0.56 0.021 213.5);
+  --chart-3: oklch(0.45 0.017 213.2);
+  --chart-4: oklch(0.378 0.015 216);
+  --chart-5: oklch(0.275 0.011 216.9);
+
+  --sidebar: oklch(0.987 0.002 197.1);
+  --sidebar-foreground: oklch(0.148 0.004 228.8);
+  --sidebar-primary: oklch(0.588 0.158 241.966);
+  --sidebar-primary-foreground: oklch(0.977 0.013 236.62);
+  --sidebar-accent: oklch(0.963 0.002 197.1);
+  --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
+  --sidebar-border: oklch(0.925 0.005 214.3);
+  --sidebar-ring: oklch(0.723 0.014 214.4);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.148 0.004 228.8);
 }
 
-main {
-  max-width: 42rem;
+.dark {
+  --background: oklch(0.148 0.004 228.8);
+  --foreground: oklch(0.987 0.002 197.1);
+
+  --card: oklch(0.218 0.008 223.9);
+  --card-foreground: oklch(0.987 0.002 197.1);
+
+  --popover: oklch(0.218 0.008 223.9);
+  --popover-foreground: oklch(0.987 0.002 197.1);
+
+  --primary: oklch(0.443 0.11 240.79);
+  --primary-foreground: oklch(0.977 0.013 236.62);
+
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.275 0.011 216.9);
+  --muted-foreground: oklch(0.723 0.014 214.4);
+
+  --accent: oklch(0.275 0.011 216.9);
+  --accent-foreground: oklch(0.987 0.002 197.1);
+
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.56 0.021 213.5);
+
+  --chart-1: oklch(0.872 0.007 219.6);
+  --chart-2: oklch(0.56 0.021 213.5);
+  --chart-3: oklch(0.45 0.017 213.2);
+  --chart-4: oklch(0.378 0.015 216);
+  --chart-5: oklch(0.275 0.011 216.9);
+
+  --sidebar: oklch(0.218 0.008 223.9);
+  --sidebar-foreground: oklch(0.987 0.002 197.1);
+  --sidebar-primary: oklch(0.685 0.169 237.323);
+  --sidebar-primary-foreground: oklch(0.293 0.066 243.157);
+  --sidebar-accent: oklch(0.275 0.011 216.9);
+  --sidebar-accent-foreground: oklch(0.987 0.002 197.1);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.56 0.021 213.5);
 }
 
-h1 {
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin: 0 0 0.5rem;
-  text-align: left;
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-heading: var(--font-heading);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-h2 {
-  font-size: 1.125rem;
-  font-weight: bold;
-  margin: 2rem 0 0.5rem;
-  text-align: left;
-}
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
 
-h3 {
-  font-size: 1rem;
-  font-weight: bold;
-  margin: 1.5rem 0 0.5rem;
-  text-align: left;
-}
+  html {
+    @apply font-sans;
+  }
 
-p {
-  margin: 0.5rem 0;
-  text-align: left;
-}
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100vh;
+    margin: 0;
+  }
 
-hr {
-  border: none;
-  border-top: 1px solid #ccc;
-  margin: 1.5rem 0;
-}
-
-ul {
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
-  text-align: left;
-}
-
-li {
-  margin: 0.25rem 0;
-  text-align: left;
-}
-
-a,
-button.link {
-  color: inherit;
-  text-decoration: underline;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-button {
-  font: inherit;
-  background: none;
-  border: 1px solid #999;
-  padding: 0.125rem 0.5rem;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-input,
-textarea {
-  font: inherit;
-  width: 100%;
-  max-width: 42rem;
-  border: none;
-  border-bottom: 1px solid #ccc;
-  padding: 0.25rem 0;
-  margin: 0.25rem 0;
-  background: transparent;
-  text-align: left;
-}
-
-input:focus,
-textarea:focus {
-  outline: none;
-  border-bottom-color: #111;
-}
-
-label {
-  display: block;
-  margin-top: 0.5rem;
-  text-align: left;
-}
-
-.muted {
-  color: #666;
-}
-
-.error {
-  color: #900;
-}
-
-.email-item {
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.email-body {
-  white-space: pre-wrap;
-  text-align: left;
-}
-
-.week-nav {
-  margin: 0.5rem 0 1rem;
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
 }
