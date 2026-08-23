@@ -17,6 +17,13 @@ export default tseslint.config(
     plugins: {
       drizzle,
     },
+    languageOptions: {
+      parserOptions: {
+        // This links the TS project service explicitly to your TypeScript rules
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     extends: [
       ...tseslint.configs.recommended,
       ...tseslint.configs.recommendedTypeChecked,
@@ -51,11 +58,6 @@ export default tseslint.config(
   {
     linterOptions: {
       reportUnusedDisableDirectives: true,
-    },
-    languageOptions: {
-      parserOptions: {
-        projectService: true,
-      },
     },
   },
 );
