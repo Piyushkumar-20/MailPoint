@@ -7,6 +7,7 @@ import { useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { GoogleIcon } from "@/components/google-icon";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -203,7 +204,9 @@ export function SignupForm({
                 >
                   {loading === "google" ? (
                     <Loader2Icon className="animate-spin" />
-                  ) : null}
+                  ) : (
+                    <GoogleIcon className="size-4" />
+                  )}
                   Continue with Google
                 </Button>
                 <FieldDescription className="text-center">
