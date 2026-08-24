@@ -1,40 +1,18 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useState } from "react";
-import { GoogleLoginButton } from "./_components/google-login-button";
-import { CalendarPanel } from "@/app/_components/calendar-panel";
-import { GmailPanel } from "@/app/_components/gmail-panel";
+import { auth } from "@/server/lib/auth";
+import { headers } from "next/headers";
 
-export default function Home() {
-  const [tab, setTab] = useState<"gmail" | "calendar">("gmail");
+import { MailPointApp } from "./_components/mailpoint-app";
 
-  return (
-    <main>
-      <h1>Google Demo</h1>
-      <p className="muted">Gmail and Calendar powered by Corsair</p>
-      <GoogleLoginButton />
-      <p>
-        {tab === "gmail" ? (
-          <>
-            <strong>Email</strong> ·{" "}
-            <button type="button" className="link" onClick={() => setTab("calendar")}>
-              Calendar
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="button" className="link" onClick={() => setTab("gmail")}>
-              Email
-            </button>
-            {" · "}
-            <strong>Calendar</strong>
-          </>
-        )}
-      </p>
+export default async function Home() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
-      <hr />
+  if (!session?.user) {
+    redirect("/login");
+  }
 
-      {tab === "gmail" ? <GmailPanel /> : <CalendarPanel />}
-    </main>
-  );
+  return <MailPointApp />;
 }
