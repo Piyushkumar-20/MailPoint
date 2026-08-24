@@ -94,7 +94,7 @@ export const calendarRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const tenant = getTenant(ctx.session.user.id);
+      const tenant = await getTenant(ctx.session.user.id);
       const weekStart = new Date(input.weekStart);
       const weekEnd = new Date(input.weekEnd);
 
@@ -126,7 +126,7 @@ export const calendarRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const tenant = getTenant(ctx.session.user.id);
+      const tenant = await getTenant(ctx.session.user.id);
       const result = await tenant.googlecalendar.api.events.getMany({
         calendarId: "primary",
         timeMin: input.weekStart,
@@ -152,7 +152,7 @@ export const calendarRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const tenant = getTenant(ctx.session.user.id);
+      const tenant = await getTenant(ctx.session.user.id);
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "none",
@@ -184,7 +184,7 @@ export const calendarRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const tenant = getTenant(ctx.session.user.id);
+      const tenant = await getTenant(ctx.session.user.id);
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "all",

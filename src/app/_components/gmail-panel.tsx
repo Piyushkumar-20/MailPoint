@@ -19,6 +19,9 @@ export function GmailPanel() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
   const utils = api.useUtils();
 
   const emails = api.gmail.searchEmails.useQuery(
@@ -68,16 +71,57 @@ export function GmailPanel() {
     },
   });
 
+  const connectGmail = async () => {
+    try {
+      setConnectError(null);
+      setIsConnecting(true);
+
+      const response = await fetch("/api/corsair/connect", {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create Gmail connection");
+      }
+
+      const data = (await response.json()) as {
+        connectUrl?: string;
+      };
+
+      if (!data.connectUrl) {
+        throw new Error("Corsair did not return a connection URL");
+      }
+
+      window.location.href = data.connectUrl;
+    } catch (error) {
+      setIsConnecting(false);
+
+      setConnectError(
+        error instanceof Error
+          ? error.message
+          : "Failed to connect Gmail",
+      );
+    }
+  };
+
   if (selectedId) {
     return (
       <div>
         <p>
-          <button type="button" className="link" onClick={() => setSelectedId(null)}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setSelectedId(null)}
+          >
             ← back to inbox
           </button>
         </p>
 
-        {selectedEmail.isLoading && <p className="muted">Loading…</p>}
+        {selectedEmail.isLoading && (
+          <p className="muted">Loading…</p>
+        )}
+
         {selectedEmail.error && (
           <p className="error">{selectedEmail.error.message}</p>
         )}
@@ -85,16 +129,23 @@ export function GmailPanel() {
         {selectedEmail.data && (
           <>
             <h2>{selectedEmail.data.subject || "(no subject)"}</h2>
+
             <p className="muted">
               {formatSender(selectedEmail.data.from)}
+
               {selectedEmail.data.date && (
                 <> · {formatMessageDate(selectedEmail.data.date)}</>
               )}
             </p>
+
             {selectedEmail.data.to && (
-              <p className="muted">To: {formatSender(selectedEmail.data.to)}</p>
+              <p className="muted">
+                To: {formatSender(selectedEmail.data.to)}
+              </p>
             )}
+
             <hr />
+
             <div className="email-body">
               <LinkifiedText
                 text={
@@ -116,31 +167,70 @@ export function GmailPanel() {
         {view === "inbox" ? (
           <strong>Inbox</strong>
         ) : (
-          <button type="button" className="link" onClick={() => setView("inbox")}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setView("inbox")}
+          >
             Inbox
           </button>
         )}
+
         {" · "}
+
         {view === "drafts" ? (
           <strong>Drafts</strong>
         ) : (
-          <button type="button" className="link" onClick={() => setView("drafts")}>
+          <button
+            type="button"
+            className="link"
+            onClick={() => setView("drafts")}
+          >
             Drafts
           </button>
         )}
+
         {" · "}
+
         <button
           type="button"
           className="link"
           onClick={() => refreshInbox.mutate()}
           disabled={refreshInbox.isPending}
         >
-          {refreshInbox.isPending ? "refreshing…" : "refresh from gmail"}
+          {refreshInbox.isPending
+            ? "refreshing…"
+            : "refresh from gmail"}
         </button>
+
+        {" · "}
+
+        <button
+          type="button"
+          className="link"
+          onClick={connectGmail}
+          disabled={isConnecting}
+        >
+          {isConnecting ? "connecting…" : "connect gmail"}
+        </button>
+
         {refreshInbox.data && (
-          <span className="muted"> ({refreshInbox.data.synced} synced)</span>
+          <span className="muted">
+            {" "}
+            ({refreshInbox.data.synced} synced)
+          </span>
         )}
       </p>
+
+      {connectError && (
+        <p className="error">{connectError}</p>
+      )}
+
+      {refreshInbox.error && (
+        <p className="error">
+          {refreshInbox.error.message}
+        </p>
+      )}
 
       {view === "inbox" && (
         <form
@@ -155,6 +245,7 @@ export function GmailPanel() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="search"
           />
+
           <p>
             <button type="submit">search</button>{" "}
             <button
@@ -170,7 +261,10 @@ export function GmailPanel() {
         </form>
       )}
 
-      {view === "inbox" && emails.isLoading && <p className="muted">Loading…</p>}
+      {view === "inbox" && emails.isLoading && (
+        <p className="muted">Loading…</p>
+      )}
+
       {view === "inbox" && emails.error && (
         <p className="error">{emails.error.message}</p>
       )}
@@ -178,8 +272,11 @@ export function GmailPanel() {
       {view === "inbox" && emails.data && (
         <>
           <h2>Inbox</h2>
+
           {emails.data.length === 0 ? (
-            <p className="muted">No emails. Try refreshing from Gmail.</p>
+            <p className="muted">
+              No emails. Try refreshing from Gmail.
+            </p>
           ) : (
             <ul>
               {emails.data.map((email) => (
@@ -191,9 +288,14 @@ export function GmailPanel() {
                   >
                     {email.subject || email.snippet || email.id}
                   </button>
+
                   {email.from && (
-                    <span className="muted"> — {formatSender(email.from)}</span>
+                    <span className="muted">
+                      {" "}
+                      — {formatSender(email.from)}
+                    </span>
                   )}
+
                   {email.date && (
                     <span className="muted">
                       {" "}
@@ -207,7 +309,10 @@ export function GmailPanel() {
         </>
       )}
 
-      {view === "drafts" && drafts.isLoading && <p className="muted">Loading…</p>}
+      {view === "drafts" && drafts.isLoading && (
+        <p className="muted">Loading…</p>
+      )}
+
       {view === "drafts" && drafts.error && (
         <p className="error">{drafts.error.message}</p>
       )}
@@ -215,6 +320,7 @@ export function GmailPanel() {
       {view === "drafts" && drafts.data && (
         <>
           <h2>Drafts</h2>
+
           {drafts.data.length === 0 ? (
             <p className="muted">No drafts.</p>
           ) : (
@@ -226,7 +332,11 @@ export function GmailPanel() {
                   <button
                     type="button"
                     className="link"
-                    onClick={() => sendDraft.mutate({ draftId: draft.id })}
+                    onClick={() =>
+                      sendDraft.mutate({
+                        draftId: draft.id,
+                      })
+                    }
                     disabled={sendDraft.isPending}
                   >
                     send
@@ -241,6 +351,7 @@ export function GmailPanel() {
       <hr />
 
       <h2>Compose</h2>
+
       <form onSubmit={(e) => e.preventDefault()}>
         <label>
           to
@@ -250,6 +361,7 @@ export function GmailPanel() {
             onChange={(e) => setTo(e.target.value)}
           />
         </label>
+
         <label>
           subject
           <input
@@ -258,6 +370,7 @@ export function GmailPanel() {
             onChange={(e) => setSubject(e.target.value)}
           />
         </label>
+
         <label>
           message
           <textarea
@@ -266,22 +379,51 @@ export function GmailPanel() {
             rows={6}
           />
         </label>
+
         <p>
           <button
             type="button"
-            onClick={() => createDraft.mutate({ to, subject, body })}
-            disabled={createDraft.isPending || !to || !subject || !body}
+            onClick={() =>
+              createDraft.mutate({
+                to,
+                subject,
+                body,
+              })
+            }
+            disabled={
+              createDraft.isPending ||
+              !to ||
+              !subject ||
+              !body
+            }
           >
-            {createDraft.isPending ? "saving…" : "save draft"}
+            {createDraft.isPending
+              ? "saving…"
+              : "save draft"}
           </button>{" "}
+
           <button
             type="button"
-            onClick={() => sendEmail.mutate({ to, subject, body })}
-            disabled={sendEmail.isPending || !to || !subject || !body}
+            onClick={() =>
+              sendEmail.mutate({
+                to,
+                subject,
+                body,
+              })
+            }
+            disabled={
+              sendEmail.isPending ||
+              !to ||
+              !subject ||
+              !body
+            }
           >
-            {sendEmail.isPending ? "sending…" : "send"}
+            {sendEmail.isPending
+              ? "sending…"
+              : "send"}
           </button>
         </p>
+
         {(createDraft.error ?? sendEmail.error) && (
           <p className="error">
             {(createDraft.error ?? sendEmail.error)?.message}

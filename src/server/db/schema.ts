@@ -170,7 +170,13 @@ export const account = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
+  (table) => [
+    index("account_userId_idx").on(table.userId),
+    unique("account_issuer_accountId_uidx").on(
+      table.issuer,
+      table.accountId,
+    ),
+  ],
 );
 
 export const verification = pgTable(
