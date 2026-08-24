@@ -1,13 +1,39 @@
 "use client";
 
 import { useMemo, useState } from "react";
-
 import {
-  formatAttendees,
-  formatEventWhen,
-  LinkifiedText,
-} from "@/lib/display";
+  CalendarPlusIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  Loader2Icon,
+  MapPinIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  SendIcon,
+  StickyNoteIcon,
+  UserRoundPlusIcon,
+  XIcon,
+} from "lucide-react";
+
+import { formatAttendees, formatEventWhen, LinkifiedText } from "@/lib/display";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 
 function toDatetimeLocalValue(date: Date) {
@@ -93,204 +119,315 @@ export function CalendarPanel() {
   };
 
   return (
-    <div>
-      <p>
-        <button
-          type="button"
-          className="link"
-          onClick={() =>
-            refreshEvents.mutate({
-              weekStart: week.start.toISOString(),
-              weekEnd: week.end.toISOString(),
-            })
-          }
-          disabled={refreshEvents.isPending}
-        >
-          {refreshEvents.isPending ? "refreshing…" : "refresh from calendar"}
-        </button>
-        {refreshEvents.data && (
-          <span className="muted"> ({refreshEvents.data.synced} synced)</span>
-        )}
-      </p>
+    <div className="grid min-h-[calc(100svh-6rem)] gap-4 xl:grid-cols-[minmax(0,1fr)_430px]">
+      <section className="border-border bg-card text-card-foreground flex min-h-0 flex-col rounded-xl border">
+        <div className="border-border border-b p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                Google Calendar
+              </p>
+              <h3 className="font-heading text-lg font-semibold">
+                {weekLabel}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setWeekOffset((w) => w - 1)}
+                aria-label="Previous week"
+              >
+                <ChevronLeftIcon />
+              </Button>
+              {weekOffset !== 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setWeekOffset(0)}
+                >
+                  This week
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setWeekOffset((w) => w + 1)}
+                aria-label="Next week"
+              >
+                <ChevronRightIcon />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  refreshEvents.mutate({
+                    weekStart: week.start.toISOString(),
+                    weekEnd: week.end.toISOString(),
+                  })
+                }
+                disabled={refreshEvents.isPending}
+              >
+                <RefreshCwIcon
+                  className={cn(refreshEvents.isPending && "animate-spin")}
+                />
+                Sync
+              </Button>
+            </div>
+          </div>
 
-      <div className="week-nav">
-        <button
-          type="button"
-          onClick={() => setWeekOffset((w) => w - 1)}
-          aria-label="Previous week"
-        >
-          ←
-        </button>{" "}
-        <strong>{weekLabel}</strong>
-        {weekOffset !== 0 && (
-          <>
-            {" "}
-            <button type="button" className="link" onClick={() => setWeekOffset(0)}>
-              this week
-            </button>
-          </>
-        )}
-        {" "}
-        <button
-          type="button"
-          onClick={() => setWeekOffset((w) => w + 1)}
-          aria-label="Next week"
-        >
-          →
-        </button>
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setActiveSearch(search);
-        }}
-      >
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="search events"
-        />
-        <p>
-          <button type="submit">search</button>{" "}
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              setActiveSearch("");
+          <form
+            className="mt-4 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setActiveSearch(search);
             }}
           >
-            clear
-          </button>
-        </p>
-      </form>
+            <div className="relative min-w-0 flex-1">
+              <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input
+                className="pl-8"
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search events"
+              />
+            </div>
+            <Button type="submit" size="icon" aria-label="Search events">
+              <SearchIcon />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Clear search"
+              onClick={() => {
+                setSearch("");
+                setActiveSearch("");
+              }}
+            >
+              <XIcon />
+            </Button>
+          </form>
 
-      {events.isLoading && <p className="muted">Loading…</p>}
-      {events.error && <p className="error">{events.error.message}</p>}
-
-      {events.data && (
-        <>
-          <h2>Events</h2>
-          {events.data.length === 0 ? (
-            <p className="muted">No events this week.</p>
-          ) : (
-            <ul>
-              {events.data.map((event) => (
-                <li key={event.id}>
-                  {event.htmlLink ? (
-                    <a
-                      href={event.htmlLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {event.summary || "untitled"}
-                    </a>
-                  ) : (
-                    <strong>{event.summary || "untitled"}</strong>
-                  )}
-                  {event.start && (
-                    <p className="muted">
-                      {formatEventWhen(event.start, event.end)}
-                    </p>
-                  )}
-                  {event.location && (
-                    <p className="muted">{event.location}</p>
-                  )}
-                  {event.description && (
-                    <p>
-                      <LinkifiedText text={event.description} />
-                    </p>
-                  )}
-                  {event.attendees.length > 0 && (
-                    <p className="muted">{formatAttendees(event.attendees)}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
+          {refreshEvents.data && (
+            <p className="text-muted-foreground mt-3 text-xs">
+              {refreshEvents.data.synced} events synced from Google Calendar.
+            </p>
           )}
-        </>
-      )}
+        </div>
 
-      <hr />
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          {events.isLoading && (
+            <div className="text-muted-foreground flex items-center gap-2 p-3 text-sm">
+              <Loader2Icon className="size-4 animate-spin" />
+              Loading events
+            </div>
+          )}
 
-      <h2>Create event</h2>
-      <form onSubmit={(e) => e.preventDefault()}>
-        <label>
-          title
-          <input
-            type="text"
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-          />
-        </label>
-        <label>
-          description
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </label>
-        <label>
-          location
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
-        </label>
-        <label>
-          start
-          <input
-            type="datetime-local"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-        </label>
-        <label>
-          end
-          <input
-            type="datetime-local"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-          />
-        </label>
-        <label>
-          attendees (comma-separated)
-          <input
-            type="text"
-            value={attendees}
-            onChange={(e) => setAttendees(e.target.value)}
-          />
-        </label>
-        <p>
-          <button
-            type="button"
-            onClick={() => createDraft.mutate(eventInput)}
-            disabled={createDraft.isPending || !summary || !start || !end}
-          >
-            {createDraft.isPending ? "saving…" : "save draft"}
-          </button>{" "}
-          <button
-            type="button"
-            onClick={() => sendInvite.mutate(eventInput)}
-            disabled={
-              sendInvite.isPending ||
-              !summary ||
-              !start ||
-              !end ||
-              parseAttendees().length === 0
-            }
-          >
-            {sendInvite.isPending ? "sending…" : "send invite"}
-          </button>
-        </p>
-        {(createDraft.error ?? sendInvite.error) && (
-          <p className="error">
-            {(createDraft.error ?? sendInvite.error)?.message}
-          </p>
-        )}
-      </form>
+          {(events.error ?? refreshEvents.error) && (
+            <p className="border-destructive/30 bg-destructive/10 text-destructive mb-3 rounded-lg border px-3 py-2 text-sm">
+              {(events.error ?? refreshEvents.error)?.message}
+            </p>
+          )}
+
+          {events.data && (
+            <div className="space-y-3">
+              {events.data.length === 0 ? (
+                <div className="border-border text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
+                  No events in this view. Sync Calendar or create an invite.
+                </div>
+              ) : (
+                events.data.map((event) => (
+                  <article
+                    key={event.id}
+                    className="border-border bg-background/40 rounded-lg border p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        {event.htmlLink ? (
+                          <a
+                            href={event.htmlLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-heading text-base font-semibold underline-offset-4 hover:underline"
+                          >
+                            {event.summary || "Untitled"}
+                          </a>
+                        ) : (
+                          <h4 className="font-heading text-base font-semibold">
+                            {event.summary || "Untitled"}
+                          </h4>
+                        )}
+                        {event.start && (
+                          <p className="text-muted-foreground mt-1 flex items-center gap-2 text-sm">
+                            <ClockIcon className="size-4" />
+                            {formatEventWhen(event.start, event.end)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="border-border bg-muted/40 text-muted-foreground rounded-md border px-2 py-1 text-xs">
+                        Event
+                      </div>
+                    </div>
+
+                    {event.location && (
+                      <p className="text-muted-foreground mt-3 flex items-center gap-2 text-sm">
+                        <MapPinIcon className="size-4" />
+                        {event.location}
+                      </p>
+                    )}
+                    {event.description && (
+                      <p className="text-card-foreground [&_a]:text-primary mt-3 text-sm leading-6 [&_a]:underline [&_a]:underline-offset-4">
+                        <LinkifiedText text={event.description} />
+                      </p>
+                    )}
+                    {event.attendees.length > 0 && (
+                      <p className="text-muted-foreground mt-3 flex items-start gap-2 text-sm">
+                        <UserRoundPlusIcon className="mt-0.5 size-4 shrink-0" />
+                        <span>{formatAttendees(event.attendees)}</span>
+                      </p>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <Card className="rounded-xl">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg">
+              <CalendarPlusIcon className="size-4" />
+            </div>
+            <div>
+              <CardTitle>Create event</CardTitle>
+              <CardDescription>Save a draft or send an invite.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={(e) => e.preventDefault()}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="calendar-title">Title</FieldLabel>
+                <Input
+                  id="calendar-title"
+                  type="text"
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  placeholder="Design review"
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="calendar-description">
+                  Description
+                </FieldLabel>
+                <textarea
+                  id="calendar-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={5}
+                  placeholder="Agenda, links, or notes"
+                  className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-28 w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="calendar-location">Location</FieldLabel>
+                <Input
+                  id="calendar-location"
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Google Meet or office"
+                />
+              </Field>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="calendar-start">Start</FieldLabel>
+                  <Input
+                    id="calendar-start"
+                    type="datetime-local"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="calendar-end">End</FieldLabel>
+                  <Input
+                    id="calendar-end"
+                    type="datetime-local"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <Field>
+                <FieldLabel htmlFor="calendar-attendees">Attendees</FieldLabel>
+                <Input
+                  id="calendar-attendees"
+                  type="text"
+                  value={attendees}
+                  onChange={(e) => setAttendees(e.target.value)}
+                  placeholder="alex@example.com, taylor@example.com"
+                />
+              </Field>
+
+              {(createDraft.error ?? sendInvite.error) && (
+                <Field>
+                  <FieldError>
+                    {(createDraft.error ?? sendInvite.error)?.message}
+                  </FieldError>
+                </Field>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => createDraft.mutate(eventInput)}
+                  disabled={createDraft.isPending || !summary || !start || !end}
+                >
+                  {createDraft.isPending ? (
+                    <Loader2Icon className="animate-spin" />
+                  ) : (
+                    <StickyNoteIcon />
+                  )}
+                  Save draft
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => sendInvite.mutate(eventInput)}
+                  disabled={
+                    sendInvite.isPending ||
+                    !summary ||
+                    !start ||
+                    !end ||
+                    parseAttendees().length === 0
+                  }
+                >
+                  {sendInvite.isPending ? (
+                    <Loader2Icon className="animate-spin" />
+                  ) : (
+                    <SendIcon />
+                  )}
+                  Send invite
+                </Button>
+              </div>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
