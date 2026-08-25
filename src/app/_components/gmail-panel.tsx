@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowLeft, MailPlus, RefreshCw, Send } from "lucide-react";
+import DOMPurify from "dompurify";
 
 import { formatMessageDate, formatSender, LinkifiedText } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -164,9 +165,7 @@ export function GmailPanel({
               selectedId && "hidden lg:block",
             )}
           >
-            {(view === "inbox" ||
-              view === "starred" ||
-              view === "sent") && (
+            {(view === "inbox" || view === "starred" || view === "sent") && (
               <MailList
                 emails={emails.data}
                 isLoading={emails.isLoading}
@@ -303,8 +302,9 @@ function MailList({
             type="button"
             onClick={() => onSelect(email.id)}
             className={cn(
-              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
-              selectedId === email.id && "bg-accent",
+              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-l-2 border-l-transparent px-4 py-3 text-left transition-colors",
+              selectedId === email.id &&
+                "border-l-primary bg-primary/10 hover:bg-primary/15",
             )}
           >
             <span className="min-w-0">
@@ -408,6 +408,7 @@ function ReadingPane({
         from: string;
         to: string;
         body: string;
+        bodyMimeType: "text/plain" | "text/html";
         snippet: string;
         date: string | null;
       }
@@ -447,41 +448,134 @@ function ReadingPane({
       {error && <StatusLine tone="error">{error}</StatusLine>}
 
       {selectedEmail && (
-        <div className="bg-card text-card-foreground rounded-lg border p-5">
+        <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm">
           <h2 className="font-heading text-xl leading-tight font-semibold">
             {selectedEmail.subject || "(no subject)"}
           </h2>
 
-          <div className="mt-4 space-y-1 text-sm">
+          <div className="text-muted-foreground mt-4 space-y-1 text-sm">
             <p>
-              <span className="text-muted-foreground">From </span>
-              <span className="font-medium">
+              <span>From </span>
+              <span className="text-foreground font-medium">
                 {formatSender(selectedEmail.from)}
               </span>
             </p>
             {selectedEmail.to && (
               <p>
-                <span className="text-muted-foreground">To </span>
+                <span>To </span>
                 {formatSender(selectedEmail.to)}
               </p>
             )}
             {selectedEmail.date && (
-              <p className="text-muted-foreground">
-                {formatMessageDate(selectedEmail.date)}
-              </p>
+              <p>{formatMessageDate(selectedEmail.date)}</p>
             )}
           </div>
 
           <div className="mt-5 border-t pt-5">
-            <div className="text-sm leading-6 whitespace-pre-wrap">
-              <LinkifiedText
-                text={selectedEmail.body || selectedEmail.snippet || "(empty)"}
-              />
-            </div>
+            <EmailBody
+              body={selectedEmail.body || selectedEmail.snippet || "(empty)"}
+              bodyMimeType={selectedEmail.bodyMimeType}
+            />
           </div>
         </div>
       )}
     </article>
+  );
+}
+
+function EmailBody({
+  body,
+  bodyMimeType,
+}: {
+  body: string;
+  bodyMimeType: "text/plain" | "text/html";
+}) {
+  const sanitizedHtml = useMemo(
+    () =>
+      bodyMimeType === "text/html"
+        ? DOMPurify.sanitize(body, {
+            ALLOWED_TAGS: [
+              "a",
+              "b",
+              "blockquote",
+              "br",
+              "caption",
+              "code",
+              "div",
+              "em",
+              "h1",
+              "h2",
+              "h3",
+              "h4",
+              "h5",
+              "h6",
+              "hr",
+              "i",
+              "li",
+              "ol",
+              "p",
+              "pre",
+              "span",
+              "strong",
+              "sub",
+              "sup",
+              "table",
+              "tbody",
+              "td",
+              "tfoot",
+              "th",
+              "thead",
+              "tr",
+              "u",
+              "ul",
+            ],
+            ALLOWED_ATTR: [
+              "align",
+              "border",
+              "cellpadding",
+              "cellspacing",
+              "cite",
+              "colspan",
+              "href",
+              "name",
+              "rowspan",
+              "title",
+              "valign",
+              "width",
+            ],
+            ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|#|\/(?!\/))/i,
+            FORBID_TAGS: [
+              "base",
+              "embed",
+              "form",
+              "iframe",
+              "img",
+              "input",
+              "link",
+              "meta",
+              "object",
+              "script",
+              "style",
+            ],
+            FORBID_ATTR: ["src", "srcset", "style", "onerror", "onclick"],
+          })
+        : "",
+    [body, bodyMimeType],
+  );
+
+  if (bodyMimeType === "text/html" && sanitizedHtml) {
+    return (
+      <div
+        className="email-html-body [&_a]:text-primary [&_blockquote]:border-primary/40 [&_pre]:bg-muted [&_td]:border-border [&_th]:border-border [&_th]:bg-muted/60 overflow-x-auto text-sm leading-6 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_li]:my-1 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-3 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_th]:text-left [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
+        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+      />
+    );
+  }
+
+  return (
+    <div className="[&_a]:text-primary text-sm leading-6 whitespace-pre-wrap [&_a]:underline [&_a]:underline-offset-2">
+      <LinkifiedText text={body} />
+    </div>
   );
 }
 

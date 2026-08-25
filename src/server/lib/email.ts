@@ -29,23 +29,63 @@ type GmailPart = {
   parts?: GmailPart[];
 };
 
-export function extractBodyFromPayload(payload?: GmailPart): string {
-  if (!payload) return "";
+export type EmailBodyMimeType = "text/plain" | "text/html";
+
+export type ExtractedEmailBody = {
+  body: string;
+  bodyMimeType: EmailBodyMimeType;
+};
+
+export function looksLikeHtml(value: string): boolean {
+  return /<\/?(?:a|blockquote|br|div|h[1-6]|li|ol|p|span|strong|table|td|th|tr|ul)\b/i.test(
+    value,
+  );
+}
+
+function collectBodyParts(
+  payload: GmailPart | undefined,
+  bodies: { plain: string[]; html: string[]; other: string[] },
+) {
+  if (!payload) return;
 
   if (payload.mimeType === "text/plain" && payload.body?.data) {
-    return decodeBase64Url(payload.body.data);
+    bodies.plain.push(decodeBase64Url(payload.body.data));
+  } else if (payload.mimeType === "text/html" && payload.body?.data) {
+    bodies.html.push(decodeBase64Url(payload.body.data));
+  } else if (payload.body?.data) {
+    bodies.other.push(decodeBase64Url(payload.body.data));
   }
 
   for (const part of payload.parts ?? []) {
-    const text = extractBodyFromPayload(part);
-    if (text) return text;
+    collectBodyParts(part, bodies);
+  }
+}
+
+export function extractBodyFromPayload(
+  payload?: GmailPart,
+): ExtractedEmailBody {
+  const bodies = {
+    plain: [] as string[],
+    html: [] as string[],
+    other: [] as string[],
+  };
+  collectBodyParts(payload, bodies);
+
+  const html = bodies.html.find(Boolean);
+  if (html) {
+    return {
+      body: html,
+      bodyMimeType: "text/html",
+    };
   }
 
-  if (payload.body?.data) {
-    return decodeBase64Url(payload.body.data);
-  }
+  const plain = bodies.plain.find(Boolean) ?? bodies.other.find(Boolean) ?? "";
+  const bodyMimeType = looksLikeHtml(plain) ? "text/html" : "text/plain";
 
-  return "";
+  return {
+    body: plain,
+    bodyMimeType,
+  };
 }
 
 export function getHeader(
