@@ -1,6 +1,7 @@
 "use client";
 
-import { CalendarDays, Inbox, Mail, RefreshCw } from "lucide-react";
+import type { ComponentType } from "react";
+import { CalendarDays, Mail, RefreshCw } from "lucide-react";
 
 import { formatEventWhen, formatMessageDate, formatSender } from "@/lib/display";
 import { getWeekBounds } from "@/lib/week";
@@ -16,7 +17,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-type ServiceKey = "gmail" | "googlecalendar";
 type NavigateTarget = "inbox" | "calendar" | "integrations";
 
 function statusLabel(state: string | undefined, loading: boolean, error: boolean) {
@@ -63,7 +63,7 @@ function ServiceCard({
 }: {
   title: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   state: string | undefined;
   loading: boolean;
   error: boolean;
@@ -118,20 +118,32 @@ export function DashboardOverview({
   onNavigate: (section: NavigateTarget) => void;
 }) {
   const week = getWeekBounds(0);
-  const connections = api.gmail.checkConnection.useQuery();
-  const recentMail = api.gmail.searchEmails.useQuery({
-    query: "",
-    mailbox: "inbox",
-    limit: 5,
-    offset: 0,
+  const connections = api.gmail.checkConnection.useQuery(undefined, {
+    refetchOnMount: "always",
   });
-  const events = api.calendar.searchEvents.useQuery({
-    query: "",
-    weekStart: week.start.toISOString(),
-    weekEnd: week.end.toISOString(),
-    limit: 5,
-    offset: 0,
-  });
+  const recentMail = api.gmail.searchEmails.useQuery(
+    {
+      query: "",
+      mailbox: "inbox",
+      limit: 5,
+      offset: 0,
+    },
+    {
+      refetchOnMount: "always",
+    },
+  );
+  const events = api.calendar.searchEvents.useQuery(
+    {
+      query: "",
+      weekStart: week.start.toISOString(),
+      weekEnd: week.end.toISOString(),
+      limit: 5,
+      offset: 0,
+    },
+    {
+      refetchOnMount: "always",
+    },
+  );
 
   const connectionStatus = connections.data;
   const gmailState = connectionStatus?.gmail;

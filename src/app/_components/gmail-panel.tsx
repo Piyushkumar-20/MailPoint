@@ -31,9 +31,6 @@ export function GmailPanel({
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-
   const utils = api.useUtils();
 
   const emails = api.gmail.searchEmails.useQuery(
@@ -97,38 +94,6 @@ export function GmailPanel({
     },
   });
 
-  const connectGmail = async () => {
-    try {
-      setConnectError(null);
-      setIsConnecting(true);
-
-      const response = await fetch("/api/corsair/connect", {
-        method: "GET",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create Gmail connection");
-      }
-
-      const data = (await response.json()) as {
-        connectUrl?: string;
-      };
-
-      if (!data.connectUrl) {
-        throw new Error("Corsair did not return a connection URL");
-      }
-
-      window.location.href = data.connectUrl;
-    } catch (error) {
-      setIsConnecting(false);
-
-      setConnectError(
-        error instanceof Error ? error.message : "Failed to connect Gmail",
-      );
-    }
-  };
-
   const canSubmitCompose = Boolean(to && subject && body);
 
   return (
@@ -170,16 +135,6 @@ export function GmailPanel({
             </Button>
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              onClick={connectGmail}
-              disabled={isConnecting}
-              className="text-muted-foreground"
-            >
-              {isConnecting ? "Connecting" : "Connect Gmail"}
-            </Button>
-            <Button
-              type="button"
               size="sm"
               onClick={() => setComposeOpen(true)}
             >
@@ -189,9 +144,8 @@ export function GmailPanel({
           </div>
         </div>
 
-        {(connectError || refreshInbox.error || refreshInbox.data) && (
+        {(refreshInbox.error || refreshInbox.data) && (
           <div className="border-b px-4 py-2 text-xs">
-            {connectError && <p className="text-destructive">{connectError}</p>}
             {refreshInbox.error && (
               <p className="text-destructive">{refreshInbox.error.message}</p>
             )}

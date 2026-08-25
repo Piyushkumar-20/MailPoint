@@ -78,11 +78,7 @@ function StatusBadge({
   );
 }
 
-export function IntegrationsPanel({
-  accountEmail,
-}: {
-  accountEmail?: string | null;
-}) {
+export function IntegrationsPanel() {
   const connections = api.gmail.checkConnection.useQuery();
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -148,7 +144,6 @@ export function IntegrationsPanel({
               state={connections.data?.[integration.plugin]}
               loading={connections.isLoading}
               error={Boolean(connections.error)}
-              accountEmail={accountEmail}
               isConnecting={isConnecting}
               onConnect={connectGoogle}
             />
@@ -172,7 +167,6 @@ function IntegrationCard({
   state,
   loading,
   error,
-  accountEmail,
   isConnecting,
   onConnect,
 }: {
@@ -182,7 +176,6 @@ function IntegrationCard({
   state: string | undefined;
   loading: boolean;
   error: boolean;
-  accountEmail?: string | null;
   isConnecting: boolean;
   onConnect: () => void;
 }) {
@@ -207,12 +200,16 @@ function IntegrationCard({
       <CardContent>
         <dl className="space-y-3 border-y py-4 text-sm">
           <div className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">MailPoint account</dt>
-            <dd className="truncate text-right">{accountEmail || "-"}</dd>
+            <dt className="text-muted-foreground">Connected Google account</dt>
+            <dd className="truncate text-right text-muted-foreground">
+              Unavailable
+            </dd>
           </div>
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Connection state</dt>
-            <dd className="truncate text-right">{statusCopy(state, loading, error)}</dd>
+            <dd className="truncate text-right">
+              {statusCopy(state, loading, error)}
+            </dd>
           </div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">

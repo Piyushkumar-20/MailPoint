@@ -189,7 +189,7 @@ export function MailPointApp({
             />
           )}
           {activeSection === "integrations" && (
-            <IntegrationsPanel accountEmail={user?.email} />
+            <IntegrationsPanel />
           )}
         </main>
       </div>
