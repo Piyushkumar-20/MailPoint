@@ -9,12 +9,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 const SECTION_TITLES: Record<AppSection, string> = {
+  overview: "Overview",
   inbox: "Inbox",
   starred: "Starred",
   drafts: "Drafts",
   sent: "Sent",
   calendar: "Calendar",
-  settings: "Settings",
+  settings: "Account",
+  integrations: "Integrations",
 };
 
 function initialsFor(user: SidebarUser | null) {

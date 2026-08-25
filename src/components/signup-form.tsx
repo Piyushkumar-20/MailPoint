@@ -92,7 +92,7 @@ export function SignupForm({
       return;
     }
 
-    router.push("/");
+    router.push("/dashboard");
     router.refresh();
   };
 
@@ -106,7 +106,7 @@ export function SignupForm({
 
     const { error: googleError } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/",
+      callbackURL: "/dashboard",
     });
 
     if (googleError) {

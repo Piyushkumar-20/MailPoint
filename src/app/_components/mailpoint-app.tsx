@@ -6,25 +6,23 @@ import { useRouter } from "next/navigation";
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
 import { CalendarPanel } from "@/app/_components/calendar-panel";
+import { DashboardOverview } from "@/app/_components/dashboard-overview";
 import { GmailPanel } from "@/app/_components/gmail-panel";
+import { IntegrationsPanel } from "@/app/_components/integrations-panel";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
 
-function EmptyState({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="mx-auto flex max-w-3xl flex-col items-center gap-1 px-6 py-20 text-center">
-      <p className="text-foreground text-sm font-medium">{title}</p>
-      <p className="text-muted-foreground text-sm">{description}</p>
-    </div>
-  );
-}
+const SECTION_PATHS: Record<AppSection, string> = {
+  overview: "/dashboard",
+  inbox: "/mail/inbox",
+  starred: "/mail/starred",
+  drafts: "/mail/drafts",
+  sent: "/mail/sent",
+  calendar: "/calendar",
+  settings: "/settings",
+  integrations: "/settings/integrations",
+};
 
 function SettingsPanel({
   user,
@@ -67,7 +65,11 @@ function SettingsPanel({
   );
 }
 
-export function MailPointApp() {
+export function MailPointApp({
+  initialSection = "overview",
+}: {
+  initialSection?: AppSection;
+}) {
   const router = useRouter();
   const { data: session } = authClient.useSession();
   const user = session?.user
@@ -78,7 +80,8 @@ export function MailPointApp() {
       }
     : null;
 
-  const [activeSection, setActiveSection] = useState<AppSection>("inbox");
+  const [activeSection, setActiveSection] =
+    useState<AppSection>(initialSection);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -105,11 +108,16 @@ export function MailPointApp() {
     }
   };
 
+  const handleNavigate = (section: AppSection) => {
+    setActiveSection(section);
+    router.push(SECTION_PATHS[section]);
+  };
+
   return (
     <div className="bg-background text-foreground flex h-screen">
       <AppSidebar
         activeSection={activeSection}
-        onNavigate={setActiveSection}
+        onNavigate={handleNavigate}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
         user={user}
@@ -126,7 +134,7 @@ export function MailPointApp() {
           user={user}
           onSignOut={handleSignOut}
           isSigningOut={isSigningOut}
-          onSettings={() => setActiveSection("settings")}
+          onSettings={() => handleNavigate("settings")}
           mailSearch={
             activeSection === "inbox"
               ? {
@@ -155,11 +163,11 @@ export function MailPointApp() {
         />
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          {activeSection === "inbox" && (
-            <GmailPanel view="inbox" searchQuery={activeMailSearch} />
-          )}
-          {activeSection === "drafts" && (
-            <GmailPanel view="drafts" searchQuery={activeMailSearch} />
+          {activeSection === "overview" && (
+            <DashboardOverview
+              userName={user?.name}
+              onNavigate={handleNavigate}
+            />
           )}
           {(activeSection === "inbox" ||
             activeSection === "starred" ||
@@ -179,6 +187,9 @@ export function MailPointApp() {
               onSignOut={handleSignOut}
               isSigningOut={isSigningOut}
             />
+          )}
+          {activeSection === "integrations" && (
+            <IntegrationsPanel accountEmail={user?.email} />
           )}
         </main>
       </div>

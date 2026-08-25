@@ -80,7 +80,7 @@ export function LoginForm({
       return;
     }
 
-    router.push("/");
+    router.push("/dashboard");
     router.refresh();
   };
 
@@ -94,7 +94,7 @@ export function LoginForm({
 
     const { error: googleError } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/",
+      callbackURL: "/dashboard",
     });
 
     if (googleError) {

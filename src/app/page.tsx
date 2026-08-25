@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { auth } from "@/server/lib/auth";
 import { headers } from "next/headers";
 
-import { MailPointApp } from "./_components/mailpoint-app";
-
 export default async function Home() {
   const session = await auth.api.getSession({
     headers: await headers(),
@@ -14,5 +12,5 @@ export default async function Home() {
     redirect("/login");
   }
 
-  return <MailPointApp />;
+  redirect("/dashboard");
 }

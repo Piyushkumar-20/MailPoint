@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronsLeft,
   ChevronsRight,
+  Home,
   Inbox,
   LogOut,
   Mail,
@@ -26,12 +27,14 @@ import {
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export type AppSection =
+  | "overview"
   | "inbox"
   | "starred"
   | "drafts"
   | "sent"
   | "calendar"
-  | "settings";
+  | "settings"
+  | "integrations";
 
 export interface SidebarUser {
   name?: string | null;
@@ -52,8 +55,17 @@ const MAIL_ITEMS: NavItem[] = [
   { section: "sent", label: "Sent", icon: Send },
 ];
 
+const DASHBOARD_ITEMS: NavItem[] = [
+  { section: "overview", label: "Overview", icon: Home },
+];
+
 const CALENDAR_ITEMS: NavItem[] = [
   { section: "calendar", label: "Calendar", icon: CalendarDays },
+];
+
+const SETTINGS_ITEMS: NavItem[] = [
+  { section: "settings", label: "Account", icon: Settings },
+  { section: "integrations", label: "Integrations", icon: Mail },
 ];
 
 function initialsFor(user: SidebarUser | null) {
@@ -197,6 +209,13 @@ function SidebarBody({
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
         <NavGroup
+          label="Dashboard"
+          items={DASHBOARD_ITEMS}
+          activeSection={activeSection}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
+        <NavGroup
           label="Mail"
           items={MAIL_ITEMS}
           activeSection={activeSection}
@@ -210,24 +229,13 @@ function SidebarBody({
           collapsed={collapsed}
           onNavigate={onNavigate}
         />
-
-        <div className="mt-4 border-t border-sidebar-border pt-2">
-          <button
-            type="button"
-            onClick={() => onNavigate("settings")}
-            title={collapsed ? "Settings" : undefined}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
-              collapsed && "justify-center px-0",
-              activeSection === "settings"
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
-            )}
-          >
-            <Settings className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Settings</span>}
-          </button>
-        </div>
+        <NavGroup
+          label="Settings"
+          items={SETTINGS_ITEMS}
+          activeSection={activeSection}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
       </div>
 
       <div className="shrink-0 border-t border-sidebar-border p-2">
