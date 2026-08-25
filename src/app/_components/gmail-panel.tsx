@@ -1,42 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ArrowLeftIcon,
-  ExternalLinkIcon,
-  InboxIcon,
-  Loader2Icon,
-  MailPlusIcon,
-  RefreshCwIcon,
-  SearchIcon,
-  SendIcon,
-  StickyNoteIcon,
-  XIcon,
-} from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 
-import { formatMessageDate, formatSender, LinkifiedText } from "@/lib/display";
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+  formatMessageDate,
+  formatSender,
+  LinkifiedText,
+} from "@/lib/display";
 import { api } from "@/trpc/react";
-import { cn } from "@/lib/utils";
 
-export function GmailPanel() {
-  const [search, setSearch] = useState("");
-  const [activeSearch, setActiveSearch] = useState("");
-  const [view, setView] = useState<"inbox" | "drafts">("inbox");
+export function GmailPanel({
+  view,
+  searchQuery,
+}: {
+  view: "inbox" | "drafts";
+  /** The active (submitted) search query, controlled by the header search box. */
+  searchQuery: string;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [to, setTo] = useState("");
@@ -49,7 +30,7 @@ export function GmailPanel() {
   const utils = api.useUtils();
 
   const emails = api.gmail.searchEmails.useQuery(
-    { query: activeSearch, limit: 50, offset: 0 },
+    { query: searchQuery, limit: 50, offset: 0 },
     { enabled: view === "inbox" },
   );
 
@@ -127,418 +108,249 @@ export function GmailPanel() {
     }
   };
 
+  const toolbarButtonClass =
+    "text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50 disabled:hover:text-zinc-400";
+
+  if (selectedId) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-6">
+        <button
+          type="button"
+          onClick={() => setSelectedId(null)}
+          className="mb-4 flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to {view}
+        </button>
+
+        {selectedEmail.isLoading && (
+          <p className="text-sm text-zinc-500">Loading…</p>
+        )}
+
+        {selectedEmail.error && (
+          <p className="text-sm text-red-400">{selectedEmail.error.message}</p>
+        )}
+
+        {selectedEmail.data && (
+          <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+            <h2 className="text-lg font-semibold text-zinc-100">
+              {selectedEmail.data.subject || "(no subject)"}
+            </h2>
+
+            <p className="mt-1 text-sm text-zinc-500">
+              {formatSender(selectedEmail.data.from)}
+              {selectedEmail.data.date && (
+                <> · {formatMessageDate(selectedEmail.data.date)}</>
+              )}
+            </p>
+
+            {selectedEmail.data.to && (
+              <p className="text-sm text-zinc-500">
+                To: {formatSender(selectedEmail.data.to)}
+              </p>
+            )}
+
+            <hr className="my-4 border-white/[0.06]" />
+
+            <div className="whitespace-pre-wrap text-sm text-zinc-300">
+              <LinkifiedText
+                text={
+                  selectedEmail.data.body ||
+                  selectedEmail.data.snippet ||
+                  "(empty)"
+                }
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid min-h-[calc(100svh-6rem)] gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)]">
-      <section className="border-border bg-card text-card-foreground flex min-h-0 flex-col rounded-xl border">
-        <div className="border-border border-b p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                Gmail
-              </p>
-              <h3 className="font-heading text-lg font-semibold">
-                Messages and drafts
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => refreshInbox.mutate()}
-                disabled={refreshInbox.isPending}
-              >
-                <RefreshCwIcon
-                  className={cn(refreshInbox.isPending && "animate-spin")}
-                />
-                Sync
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={connectGmail}
-                disabled={isConnecting}
-              >
-                {isConnecting ? (
-                  <Loader2Icon className="animate-spin" />
-                ) : (
-                  <ExternalLinkIcon />
-                )}
-                Connect
-              </Button>
-            </div>
-          </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => refreshInbox.mutate()}
+          disabled={refreshInbox.isPending}
+          className={`flex items-center gap-1.5 ${toolbarButtonClass}`}
+        >
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${refreshInbox.isPending ? "animate-spin" : ""}`}
+          />
+          {refreshInbox.isPending ? "Refreshing…" : "Refresh from Gmail"}
+        </button>
 
-          <div className="bg-muted/45 mt-4 grid grid-cols-2 gap-2 rounded-lg p-1">
-            <button
-              type="button"
-              onClick={() => {
-                setView("inbox");
-                setSelectedId(null);
-              }}
-              className={cn(
-                "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                view === "inbox"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <InboxIcon className="size-4" />
-              Inbox
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setView("drafts");
-                setSelectedId(null);
-              }}
-              className={cn(
-                "flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                view === "drafts"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <StickyNoteIcon className="size-4" />
-              Drafts
-            </button>
-          </div>
+        {refreshInbox.data && (
+          <span className="text-xs text-zinc-600">
+            {refreshInbox.data.synced} synced
+          </span>
+        )}
 
-          {view === "inbox" && (
-            <form
-              className="mt-4 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                setActiveSearch(search);
-              }}
-            >
-              <div className="relative min-w-0 flex-1">
-                <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-                <Input
-                  className="pl-8"
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search Gmail"
-                />
-              </div>
-              <Button type="submit" size="icon" aria-label="Search">
-                <SearchIcon />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                aria-label="Clear search"
-                onClick={() => {
-                  setSearch("");
-                  setActiveSearch("");
-                }}
-              >
-                <XIcon />
-              </Button>
-            </form>
+        <span className="text-zinc-700">·</span>
+
+        <button
+          type="button"
+          onClick={connectGmail}
+          disabled={isConnecting}
+          className={toolbarButtonClass}
+        >
+          {isConnecting ? "Connecting…" : "Connect Gmail"}
+        </button>
+      </div>
+
+      {connectError && <p className="text-sm text-red-400">{connectError}</p>}
+      {refreshInbox.error && (
+        <p className="text-sm text-red-400">{refreshInbox.error.message}</p>
+      )}
+
+      {view === "inbox" && (
+        <div>
+          {emails.isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
+          {emails.error && (
+            <p className="text-sm text-red-400">{emails.error.message}</p>
           )}
 
-          {(connectError ?? refreshInbox.error?.message) && (
-            <p className="border-destructive/30 bg-destructive/10 text-destructive mt-3 rounded-lg border px-3 py-2 text-sm">
-              {connectError ?? refreshInbox.error?.message}
-            </p>
-          )}
-
-          {refreshInbox.data && (
-            <p className="text-muted-foreground mt-3 text-xs">
-              {refreshInbox.data.synced} messages synced from Gmail.
-            </p>
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          {view === "inbox" && emails.isLoading && (
-            <div className="text-muted-foreground flex items-center gap-2 p-3 text-sm">
-              <Loader2Icon className="size-4 animate-spin" />
-              Loading messages
-            </div>
-          )}
-
-          {view === "inbox" && emails.error && (
-            <p className="border-destructive/30 bg-destructive/10 text-destructive m-2 rounded-lg border px-3 py-2 text-sm">
-              {emails.error.message}
-            </p>
-          )}
-
-          {view === "inbox" && emails.data && (
-            <div className="space-y-1">
+          {emails.data && (
+            <>
               {emails.data.length === 0 ? (
-                <div className="border-border text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-                  No emails found. Sync Gmail or try a different search.
+                <div className="rounded-lg border border-dashed border-white/[0.08] py-12 text-center">
+                  <p className="text-sm text-zinc-500">
+                    No emails yet. Try refreshing from Gmail.
+                  </p>
                 </div>
               ) : (
-                emails.data.map((email) => (
-                  <button
-                    key={email.id}
-                    type="button"
-                    className={cn(
-                      "hover:border-border hover:bg-muted/50 w-full rounded-lg border border-transparent px-3 py-3 text-left transition-colors",
-                      selectedId === email.id &&
-                        "border-border bg-muted text-foreground",
-                    )}
-                    onClick={() => setSelectedId(email.id)}
-                  >
-                    <span className="block truncate text-sm font-medium">
-                      {email.subject || email.snippet || email.id}
-                    </span>
-                    <span className="text-muted-foreground mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs">
-                      {email.from && <span>{formatSender(email.from)}</span>}
-                      {email.date && (
-                        <span>{formatMessageDate(email.date)}</span>
-                      )}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-
-          {view === "drafts" && drafts.isLoading && (
-            <div className="text-muted-foreground flex items-center gap-2 p-3 text-sm">
-              <Loader2Icon className="size-4 animate-spin" />
-              Loading drafts
-            </div>
-          )}
-
-          {view === "drafts" && drafts.error && (
-            <p className="border-destructive/30 bg-destructive/10 text-destructive m-2 rounded-lg border px-3 py-2 text-sm">
-              {drafts.error.message}
-            </p>
-          )}
-
-          {view === "drafts" && drafts.data && (
-            <div className="space-y-2">
-              {drafts.data.length === 0 ? (
-                <div className="border-border text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
-                  No drafts yet. Compose one on the right.
-                </div>
-              ) : (
-                drafts.data.map((draft) => (
-                  <div
-                    key={draft.id}
-                    className="border-border bg-background/40 flex items-center justify-between gap-3 rounded-lg border p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        Draft {draft.id}
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        Ready to send from Gmail
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() =>
-                        sendDraft.mutate({
-                          draftId: draft.id,
-                        })
+                <ul className="overflow-hidden rounded-lg border border-white/[0.06]">
+                  {emails.data.map((email, idx) => (
+                    <li
+                      key={email.id}
+                      className={
+                        idx !== 0 ? "border-t border-white/[0.06]" : ""
                       }
-                      disabled={sendDraft.isPending}
                     >
-                      {sendDraft.isPending ? (
-                        <Loader2Icon className="animate-spin" />
-                      ) : (
-                        <SendIcon />
-                      )}
-                      Send
-                    </Button>
-                  </div>
-                ))
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(email.id)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm text-zinc-200">
+                            {email.subject || email.snippet || email.id}
+                          </span>
+                          {email.from && (
+                            <span className="mt-0.5 block truncate text-xs text-zinc-500">
+                              {formatSender(email.from)}
+                            </span>
+                          )}
+                        </span>
+                        {email.date && (
+                          <span className="shrink-0 text-xs text-zinc-600">
+                            {formatMessageDate(email.date)}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
+            </>
           )}
         </div>
-      </section>
+      )}
 
-      <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_390px]">
-        <Card className="min-h-[420px] rounded-xl">
-          <CardHeader className="border-border border-b">
-            {selectedId ? (
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle>Reading pane</CardTitle>
-                  <CardDescription>Message details from Gmail</CardDescription>
+      {view === "drafts" && (
+        <div>
+          {drafts.isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
+          {drafts.error && (
+            <p className="text-sm text-red-400">{drafts.error.message}</p>
+          )}
+
+          {drafts.data && (
+            <>
+              {drafts.data.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-white/[0.08] py-12 text-center">
+                  <p className="text-sm text-zinc-500">No drafts.</p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedId(null)}
-                >
-                  <ArrowLeftIcon />
-                  Back
-                </Button>
-              </div>
-            ) : (
-              <>
-                <CardTitle>Reading pane</CardTitle>
-                <CardDescription>
-                  Select a message to read without leaving the workspace.
-                </CardDescription>
-              </>
-            )}
-          </CardHeader>
-          <CardContent className="min-h-0 flex-1 overflow-auto">
-            {!selectedId && (
-              <div className="border-border flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-                <MailPlusIcon className="text-muted-foreground mb-3 size-8" />
-                <p className="font-medium">No message selected</p>
-                <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-                  Search or sync Gmail, then open a message from the list.
-                </p>
-              </div>
-            )}
+              ) : (
+                <ul className="overflow-hidden rounded-lg border border-white/[0.06]">
+                  {drafts.data.map((draft, idx) => (
+                    <li
+                      key={draft.id}
+                      className={`flex items-center justify-between px-4 py-3 text-sm text-zinc-300 ${
+                        idx !== 0 ? "border-t border-white/[0.06]" : ""
+                      }`}
+                    >
+                      <span>Draft {draft.id}</span>
+                      <button
+                        type="button"
+                        onClick={() => sendDraft.mutate({ draftId: draft.id })}
+                        disabled={sendDraft.isPending}
+                        className="text-xs text-[#B4A4F0] hover:text-[#C9BDF5] disabled:opacity-50"
+                      >
+                        Send
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
-            {selectedId && selectedEmail.isLoading && (
-              <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loader2Icon className="size-4 animate-spin" />
-                Loading message
-              </div>
-            )}
+      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
+        <h2 className="mb-3 text-sm font-semibold text-zinc-100">Compose</h2>
 
-            {selectedId && selectedEmail.error && (
-              <p className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border px-3 py-2 text-sm">
-                {selectedEmail.error.message}
-              </p>
-            )}
+        <div className="flex flex-col gap-3">
+          <input
+            type="email"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="To"
+            className="h-9 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#6E56CF]/50 focus:outline-none"
+          />
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Subject"
+            className="h-9 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#6E56CF]/50 focus:outline-none"
+          />
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={6}
+            placeholder="Message"
+            className="resize-none rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#6E56CF]/50 focus:outline-none"
+          />
 
-            {selectedId && selectedEmail.data && (
-              <article className="space-y-5">
-                <div>
-                  <h3 className="font-heading text-2xl leading-tight font-semibold">
-                    {selectedEmail.data.subject || "(no subject)"}
-                  </h3>
-                  <div className="text-muted-foreground mt-3 space-y-1 text-sm">
-                    <p>
-                      From: {formatSender(selectedEmail.data.from)}
-                      {selectedEmail.data.date && (
-                        <> - {formatMessageDate(selectedEmail.data.date)}</>
-                      )}
-                    </p>
-                    {selectedEmail.data.to && (
-                      <p>To: {formatSender(selectedEmail.data.to)}</p>
-                    )}
-                  </div>
-                </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => createDraft.mutate({ to, subject, body })}
+              disabled={createDraft.isPending || !to || !subject || !body}
+              className="rounded-md border border-white/[0.08] px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+            >
+              {createDraft.isPending ? "Saving…" : "Save draft"}
+            </button>
+            <button
+              type="button"
+              onClick={() => sendEmail.mutate({ to, subject, body })}
+              disabled={sendEmail.isPending || !to || !subject || !body}
+              className="rounded-md bg-[#6E56CF] px-3 py-1.5 text-sm text-white hover:bg-[#7C6BDB] disabled:opacity-50"
+            >
+              {sendEmail.isPending ? "Sending…" : "Send"}
+            </button>
+          </div>
 
-                <div className="border-border bg-background/45 text-card-foreground [&_a]:text-primary rounded-lg border p-4 text-sm leading-7 whitespace-pre-wrap [&_a]:underline [&_a]:underline-offset-4">
-                  <LinkifiedText
-                    text={
-                      selectedEmail.data.body ||
-                      selectedEmail.data.snippet ||
-                      "(empty)"
-                    }
-                  />
-                </div>
-              </article>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-xl">
-          <CardHeader>
-            <CardTitle>Compose</CardTitle>
-            <CardDescription>Draft or send a Gmail message.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={(e) => e.preventDefault()}>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="gmail-to">To</FieldLabel>
-                  <Input
-                    id="gmail-to"
-                    type="email"
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    placeholder="name@example.com"
-                  />
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="gmail-subject">Subject</FieldLabel>
-                  <Input
-                    id="gmail-subject"
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="What is this about?"
-                  />
-                </Field>
-
-                <Field>
-                  <FieldLabel htmlFor="gmail-body">Message</FieldLabel>
-                  <textarea
-                    id="gmail-body"
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    rows={10}
-                    placeholder="Write the message..."
-                    className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-48 w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
-                  />
-                </Field>
-
-                {(createDraft.error ?? sendEmail.error) && (
-                  <Field>
-                    <FieldError>
-                      {(createDraft.error ?? sendEmail.error)?.message}
-                    </FieldError>
-                  </Field>
-                )}
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      createDraft.mutate({
-                        to,
-                        subject,
-                        body,
-                      })
-                    }
-                    disabled={createDraft.isPending || !to || !subject || !body}
-                  >
-                    {createDraft.isPending ? (
-                      <Loader2Icon className="animate-spin" />
-                    ) : (
-                      <StickyNoteIcon />
-                    )}
-                    Save draft
-                  </Button>
-
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      sendEmail.mutate({
-                        to,
-                        subject,
-                        body,
-                      })
-                    }
-                    disabled={sendEmail.isPending || !to || !subject || !body}
-                  >
-                    {sendEmail.isPending ? (
-                      <Loader2Icon className="animate-spin" />
-                    ) : (
-                      <SendIcon />
-                    )}
-                    Send
-                  </Button>
-                </div>
-              </FieldGroup>
-            </form>
-          </CardContent>
-        </Card>
-      </section>
+          {(createDraft.error ?? sendEmail.error) && (
+            <p className="text-sm text-red-400">
+              {(createDraft.error ?? sendEmail.error)?.message}
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
