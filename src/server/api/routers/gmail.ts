@@ -77,31 +77,64 @@ export const gmailRouter = createTRPCRouter({
     });
   }),
   searchEmails: protectedProcedure
-    .input(
-      paginationSchema.extend({
-        query: z.string(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const tenant = await getTenant(ctx.session.user.id);
-
-      const messages = input.query.trim()
-        ? await tenant.gmail.db.messages.search({
-            data: {
-              snippet: { contains: input.query },
-            },
-            limit: input.limit,
-            offset: input.offset,
-          })
-        : await tenant.gmail.db.messages.list({
-            limit: input.limit,
-            offset: input.offset,
-          });
-
-      return sortMessagesNewestFirst(
-        dedupeByEntityId(messages).map(mapMessage),
-      );
+  .input(
+    paginationSchema.extend({
+      query: z.string(),
+      mailbox: z.enum(["inbox", "starred", "sent"]).default("inbox"),
     }),
+  )
+  .query(async ({ ctx, input }) => {
+    const tenant = await getTenant(ctx.session.user.id);
+
+    const labelIds = {
+      inbox: ["INBOX"],
+      starred: ["STARRED"],
+      sent: ["SENT"],
+    }[input.mailbox];
+
+    const result = await tenant.gmail.api.messages.list({
+      maxResults: input.limit,
+      labelIds,
+      q: input.query.trim() || undefined,
+    });
+
+    const messages = result.messages ?? [];
+
+    const mappedMessages = await Promise.all(
+      messages.map(async (message) => {
+        if (!message.id) return null;
+
+        const fullMessage = await tenant.gmail.api.messages.get({
+          id: message.id,
+          format: "full",
+        });
+
+        const headers = fullMessage.payload?.headers;
+
+        return {
+          id: fullMessage.id ?? message.id,
+          threadId: fullMessage.threadId ?? "",
+          snippet: fullMessage.snippet ?? "",
+          subject: getHeader(headers, "Subject"),
+          from: getHeader(headers, "From"),
+          to: getHeader(headers, "To"),
+          date:
+            fullMessage.internalDate != null
+              ? String(fullMessage.internalDate)
+              : null,
+          timestamp: messageTimestamp(
+            fullMessage.internalDate != null
+              ? String(fullMessage.internalDate)
+              : null,
+          ),
+        };
+      }),
+    );
+
+    return mappedMessages
+      .filter((message): message is NonNullable<typeof message> => message !== null)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }),
 
   getMessage: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
@@ -161,13 +194,18 @@ export const gmailRouter = createTRPCRouter({
       }));
     }),
 
-  refreshInbox: protectedProcedure.mutation(async ({ctx}) => {
-    const tenant = await getTenant(ctx.session.user.id);
-    const result = await tenant.gmail.api.threads.list({ maxResults: 50 });
-    return {
-      synced: result.threads?.length ?? 0,
-    };
-  }),
+    refreshInbox: protectedProcedure.mutation(async ({ ctx }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+    
+      const result = await tenant.gmail.api.threads.list({
+        maxResults: 50,
+        labelIds: ["INBOX"],
+      });
+    
+      return {
+        synced: result.threads?.length ?? 0,
+      };
+    }),
 
   createDraft: protectedProcedure
     .input(

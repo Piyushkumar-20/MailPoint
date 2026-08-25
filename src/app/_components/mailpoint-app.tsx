@@ -11,11 +11,17 @@ import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
 
-function EmptyState({ title, description }: { title: string; description: string }) {
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center gap-1 px-6 py-20 text-center">
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <p className="text-foreground text-sm font-medium">{title}</p>
+      <p className="text-muted-foreground text-sm">{description}</p>
     </div>
   );
 }
@@ -25,13 +31,17 @@ function SettingsPanel({
   onSignOut,
   isSigningOut,
 }: {
-  user: { name?: string | null; email?: string | null; image?: string | null } | null;
+  user: {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+  } | null;
   onSignOut: () => void;
   isSigningOut: boolean;
 }) {
   return (
     <div className="mx-auto max-w-3xl px-6 py-6">
-      <div className="rounded-lg border bg-card p-5 text-card-foreground">
+      <div className="bg-card text-card-foreground rounded-lg border p-5">
         <h2 className="mb-4 text-sm font-semibold">Account</h2>
         <dl className="flex flex-col gap-3 text-sm">
           <div className="flex justify-between border-b pb-3">
@@ -96,7 +106,7 @@ export function MailPointApp() {
   };
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="bg-background text-foreground flex h-screen">
       <AppSidebar
         activeSection={activeSection}
         onNavigate={setActiveSection}
@@ -137,8 +147,7 @@ export function MailPointApp() {
                   onToday: () => setWeekOffset(0),
                   onPrevWeek: () => setWeekOffset((w) => w - 1),
                   onNextWeek: () => setWeekOffset((w) => w + 1),
-                  onCreateEvent: () =>
-                    setFocusCreateSignal((n) => n + 1),
+                  onCreateEvent: () => setFocusCreateSignal((n) => n + 1),
                   isCurrentWeek: weekOffset === 0,
                 }
               : undefined
@@ -152,17 +161,11 @@ export function MailPointApp() {
           {activeSection === "drafts" && (
             <GmailPanel view="drafts" searchQuery={activeMailSearch} />
           )}
-          {activeSection === "starred" && (
-            <EmptyState
-              title="Starred isn't wired up yet"
-              description="This view needs a starred-messages query on the backend before it can show real data."
-            />
-          )}
-          {activeSection === "sent" && (
-            <EmptyState
-              title="Sent isn't wired up yet"
-              description="This view needs a sent-messages query on the backend before it can show real data."
-            />
+          {(activeSection === "inbox" ||
+            activeSection === "starred" ||
+            activeSection === "sent" ||
+            activeSection === "drafts") && (
+            <GmailPanel view={activeSection} searchQuery={activeMailSearch} />
           )}
           {activeSection === "calendar" && (
             <CalendarPanel

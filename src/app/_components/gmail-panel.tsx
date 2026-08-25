@@ -3,11 +3,7 @@
 import { useState } from "react";
 import { ArrowLeft, MailPlus, RefreshCw, Send } from "lucide-react";
 
-import {
-  formatMessageDate,
-  formatSender,
-  LinkifiedText,
-} from "@/lib/display";
+import { formatMessageDate, formatSender, LinkifiedText } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +20,7 @@ export function GmailPanel({
   view,
   searchQuery,
 }: {
-  view: "inbox" | "drafts";
+  view: "inbox" | "starred" | "drafts" | "sent";
   /** The active (submitted) search query, controlled by the header search box. */
   searchQuery: string;
 }) {
@@ -41,18 +37,30 @@ export function GmailPanel({
   const utils = api.useUtils();
 
   const emails = api.gmail.searchEmails.useQuery(
-    { query: searchQuery, limit: 50, offset: 0 },
-    { enabled: view === "inbox" },
+    {
+      query: searchQuery,
+      limit: 50,
+      offset: 0,
+      mailbox:
+        view === "starred" ? "starred" : view === "sent" ? "sent" : "inbox",
+    },
+    {
+      enabled: view === "inbox" || view === "starred" || view === "sent",
+    },
   );
 
   const selectedEmail = api.gmail.getMessage.useQuery(
     { id: selectedId! },
     { enabled: !!selectedId },
   );
-
   const drafts = api.gmail.listDrafts.useQuery(
-    { limit: 50, offset: 0 },
-    { enabled: view === "drafts" },
+    {
+      limit: 50,
+      offset: 0,
+    },
+    {
+      enabled: view === "drafts",
+    },
   );
 
   const refreshInbox = api.gmail.refreshInbox.useMutation({
@@ -129,9 +137,15 @@ export function GmailPanel({
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
           <div className="min-w-0">
             <h2 className="font-heading text-base font-semibold">
-              {view === "inbox" ? "Inbox" : "Drafts"}
+              {view === "inbox"
+                ? "Inbox"
+                : view === "starred"
+                  ? "Starred"
+                  : view === "sent"
+                    ? "Sent"
+                    : "Drafts"}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {searchQuery ? `Results for "${searchQuery}"` : "Mail from Gmail"}
             </p>
           </div>
@@ -164,7 +178,11 @@ export function GmailPanel({
             >
               {isConnecting ? "Connecting" : "Connect Gmail"}
             </Button>
-            <Button type="button" size="sm" onClick={() => setComposeOpen(true)}>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setComposeOpen(true)}
+            >
               <MailPlus className="h-3.5 w-3.5" />
               Compose
             </Button>
@@ -192,7 +210,9 @@ export function GmailPanel({
               selectedId && "hidden lg:block",
             )}
           >
-            {view === "inbox" && (
+            {(view === "inbox" ||
+              view === "starred" ||
+              view === "sent") && (
               <MailList
                 emails={emails.data}
                 isLoading={emails.isLoading}
@@ -215,7 +235,7 @@ export function GmailPanel({
 
           <section
             className={cn(
-              "min-h-0 overflow-y-auto bg-muted/20",
+              "bg-muted/20 min-h-0 overflow-y-auto",
               !selectedId && "hidden lg:block",
             )}
           >
@@ -254,11 +274,11 @@ export function GmailPanel({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Message"
-              className="min-h-64 flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-64 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
             />
 
             {(createDraft.error ?? sendEmail.error) && (
-              <p className="text-sm text-destructive">
+              <p className="text-destructive text-sm">
                 {(createDraft.error ?? sendEmail.error)?.message}
               </p>
             )}
@@ -314,7 +334,10 @@ function MailList({
 
   if (!emails || emails.length === 0) {
     return (
-      <EmptyPanel title="No emails yet" description="Try refreshing from Gmail." />
+      <EmptyPanel
+        title="No emails yet"
+        description="Try refreshing from Gmail."
+      />
     );
   }
 
@@ -326,7 +349,7 @@ function MailList({
             type="button"
             onClick={() => onSelect(email.id)}
             className={cn(
-              "grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors hover:bg-muted/60",
+              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
               selectedId === email.id && "bg-accent",
             )}
           >
@@ -338,13 +361,13 @@ function MailList({
                 {email.subject || "(no subject)"}
               </span>
               {email.snippet && (
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                   {email.snippet}
                 </span>
               )}
             </span>
             {email.date && (
-              <span className="shrink-0 pt-0.5 text-xs text-muted-foreground">
+              <span className="text-muted-foreground shrink-0 pt-0.5 text-xs">
                 {formatMessageDate(email.date)}
               </span>
             )}
@@ -378,7 +401,12 @@ function DraftList({
   if (error) return <StatusLine tone="error">{error}</StatusLine>;
 
   if (!drafts || drafts.length === 0) {
-    return <EmptyPanel title="No drafts" description="Saved drafts will appear here." />;
+    return (
+      <EmptyPanel
+        title="No drafts"
+        description="Saved drafts will appear here."
+      />
+    );
   }
 
   return (
@@ -391,7 +419,7 @@ function DraftList({
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">Draft {draft.id}</p>
             {draft.createdAt && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Saved {formatMessageDate(draft.createdAt)}
               </p>
             )}
@@ -433,14 +461,14 @@ function ReadingPane({
   isLoading: boolean;
   error?: string;
   onBack: () => void;
-  view: "inbox" | "drafts";
+  view: "inbox" | "starred" | "drafts" | "sent";
 }) {
   if (!selectedId) {
     return (
       <div className="flex h-full items-center justify-center px-8 text-center">
         <div>
           <p className="font-heading text-sm font-semibold">Select a message</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-muted-foreground mt-1 text-sm">
             Your reading pane keeps the conversation in context.
           </p>
         </div>
@@ -465,15 +493,17 @@ function ReadingPane({
       {error && <StatusLine tone="error">{error}</StatusLine>}
 
       {selectedEmail && (
-        <div className="rounded-lg border bg-card p-5 text-card-foreground">
-          <h2 className="font-heading text-xl font-semibold leading-tight">
+        <div className="bg-card text-card-foreground rounded-lg border p-5">
+          <h2 className="font-heading text-xl leading-tight font-semibold">
             {selectedEmail.subject || "(no subject)"}
           </h2>
 
           <div className="mt-4 space-y-1 text-sm">
             <p>
               <span className="text-muted-foreground">From </span>
-              <span className="font-medium">{formatSender(selectedEmail.from)}</span>
+              <span className="font-medium">
+                {formatSender(selectedEmail.from)}
+              </span>
             </p>
             {selectedEmail.to && (
               <p>
@@ -489,7 +519,7 @@ function ReadingPane({
           </div>
 
           <div className="mt-5 border-t pt-5">
-            <div className="whitespace-pre-wrap text-sm leading-6">
+            <div className="text-sm leading-6 whitespace-pre-wrap">
               <LinkifiedText
                 text={selectedEmail.body || selectedEmail.snippet || "(empty)"}
               />
@@ -530,7 +560,7 @@ function EmptyPanel({
   return (
     <div className="m-4 rounded-lg border border-dashed py-12 text-center">
       <p className="text-sm font-medium">{title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      <p className="text-muted-foreground mt-1 text-sm">{description}</p>
     </div>
   );
 }
