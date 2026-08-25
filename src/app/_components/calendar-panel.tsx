@@ -1,19 +1,70 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarPlus, MapPin, RefreshCw, Search, Users } from "lucide-react";
 
 import {
   formatAttendees,
   formatEventWhen,
   LinkifiedText,
 } from "@/lib/display";
+import { cn } from "@/lib/utils";
 import { getWeekBounds } from "@/lib/week";
 import { api } from "@/trpc/react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 function toDatetimeLocalValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+type CalendarEvent = {
+  id: string;
+  summary: string;
+  description: string;
+  location: string;
+  status: string;
+  start: string;
+  end: string;
+  attendees: string[];
+  htmlLink: string;
+};
+
+function dayKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Undated";
+  return date.toDateString();
+}
+
+function dayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Undated";
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function groupEventsByDay(events: CalendarEvent[]) {
+  const groups = new Map<string, CalendarEvent[]>();
+  for (const event of events) {
+    const key = dayKey(event.start);
+    groups.set(key, [...(groups.get(key) ?? []), event]);
+  }
+  return Array.from(groups.entries()).map(([key, items]) => ({
+    key,
+    label: dayLabel(items[0]?.start ?? ""),
+    events: items,
+  }));
 }
 
 export function CalendarPanel({
@@ -22,11 +73,12 @@ export function CalendarPanel({
 }: {
   /** Which week to show, relative to the current week (0 = this week). Controlled by the header nav. */
   weekOffset: number;
-  /** Bump this number to scroll/focus the create-event form (triggered by the header "Create" button). */
+  /** Bump this number to open the create-event sheet from the header button. */
   focusCreateSignal: number;
 }) {
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
 
@@ -42,18 +94,10 @@ export function CalendarPanel({
   const [end, setEnd] = useState(toDatetimeLocalValue(defaultEnd));
   const [attendees, setAttendees] = useState("");
 
-  const createSectionRef = useRef<HTMLDivElement>(null);
-  const summaryInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     if (focusCreateSignal > 0) {
-      createSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-      summaryInputRef.current?.focus();
+      setCreateOpen(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusCreateSignal]);
 
   const utils = api.useUtils();
@@ -76,6 +120,7 @@ export function CalendarPanel({
     onSuccess: async () => {
       await utils.calendar.searchEvents.invalidate();
       resetForm();
+      setCreateOpen(false);
     },
   });
 
@@ -83,6 +128,7 @@ export function CalendarPanel({
     onSuccess: async () => {
       await utils.calendar.searchEvents.invalidate();
       resetForm();
+      setCreateOpen(false);
     },
   });
 
@@ -113,200 +159,220 @@ export function CalendarPanel({
     attendees: parseAttendees(),
   };
 
-  const inputClass =
-    "h-9 w-full rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#6E56CF]/50 focus:outline-none";
+  const groupedEvents = groupEventsByDay(events.data ?? []);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() =>
-            refreshEvents.mutate({
-              weekStart: week.start.toISOString(),
-              weekEnd: week.end.toISOString(),
-            })
-          }
-          disabled={refreshEvents.isPending}
-          className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${refreshEvents.isPending ? "animate-spin" : ""}`}
-          />
-          {refreshEvents.isPending ? "Refreshing…" : "Refresh from calendar"}
-        </button>
-        {refreshEvents.data && (
-          <span className="text-xs text-zinc-600">
-            {refreshEvents.data.synced} synced
-          </span>
-        )}
-      </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setActiveSearch(search);
-        }}
-        className="flex items-center gap-2"
-      >
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search events"
-          className={inputClass}
-        />
-        <button
-          type="submit"
-          className="shrink-0 rounded-md border border-white/[0.08] px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5"
-        >
-          Search
-        </button>
-        {activeSearch && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              setActiveSearch("");
-            }}
-            className="shrink-0 text-sm text-zinc-500 hover:text-zinc-300"
-          >
-            Clear
-          </button>
-        )}
-      </form>
-
-      <div>
-        {events.isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
-        {events.error && (
-          <p className="text-sm text-red-400">{events.error.message}</p>
-        )}
-
-        {events.data && (
-          <>
-            {events.data.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-white/[0.08] py-12 text-center">
-                <p className="text-sm text-zinc-500">No events this week.</p>
-              </div>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {events.data.map((event) => (
-                  <li
-                    key={event.id}
-                    className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4"
-                  >
-                    {event.htmlLink ? (
-                      <a
-                        href={event.htmlLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-medium text-zinc-100 hover:text-[#B4A4F0]"
-                      >
-                        {event.summary || "Untitled"}
-                      </a>
-                    ) : (
-                      <span className="text-sm font-medium text-zinc-100">
-                        {event.summary || "Untitled"}
-                      </span>
-                    )}
-                    {event.start && (
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {formatEventWhen(event.start, event.end)}
-                      </p>
-                    )}
-                    {event.location && (
-                      <p className="text-xs text-zinc-500">
-                        {event.location}
-                      </p>
-                    )}
-                    {event.description && (
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-300">
-                        <LinkifiedText text={event.description} />
-                      </p>
-                    )}
-                    {event.attendees.length > 0 && (
-                      <p className="mt-2 text-xs text-zinc-500">
-                        {formatAttendees(event.attendees)}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
-      </div>
-
-      <div
-        id="create-event-section"
-        ref={createSectionRef}
-        className="scroll-mt-20 rounded-lg border border-white/[0.06] bg-white/[0.02] p-5"
-      >
-        <h2 className="mb-3 text-sm font-semibold text-zinc-100">
-          Create event
-        </h2>
-
-        <div className="flex flex-col gap-3">
-          <input
-            ref={summaryInputRef}
-            type="text"
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            placeholder="Title"
-            className={inputClass}
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description"
-            rows={3}
-            className="resize-none rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#6E56CF]/50 focus:outline-none"
-          />
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="Location"
-            className={inputClass}
-          />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-zinc-500">
-              Start
-              <input
-                type="datetime-local"
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-zinc-500">
-              End
-              <input
-                type="datetime-local"
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className={inputClass}
-              />
-            </label>
+    <>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
+          <div className="min-w-0">
+            <h2 className="font-heading text-base font-semibold">Calendar</h2>
+            <p className="text-xs text-muted-foreground">
+              {week.start.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              })}{" "}
+              -{" "}
+              {week.end.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              })}
+            </p>
           </div>
-          <input
-            type="text"
-            value={attendees}
-            onChange={(e) => setAttendees(e.target.value)}
-            placeholder="Attendees (comma-separated)"
-            className={inputClass}
-          />
 
-          <div className="flex items-center gap-2">
-            <button
+          <div className="flex items-center gap-1.5">
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                refreshEvents.mutate({
+                  weekStart: week.start.toISOString(),
+                  weekEnd: week.end.toISOString(),
+                })
+              }
+              disabled={refreshEvents.isPending}
+            >
+              <RefreshCw
+                className={cn(
+                  "h-3.5 w-3.5",
+                  refreshEvents.isPending && "animate-spin",
+                )}
+              />
+              <span className="hidden sm:inline">
+                {refreshEvents.isPending ? "Refreshing" : "Refresh"}
+              </span>
+            </Button>
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <CalendarPlus className="h-3.5 w-3.5" />
+              Create
+            </Button>
+          </div>
+        </div>
+
+        {(refreshEvents.data || refreshEvents.error) && (
+          <div className="border-b px-4 py-2 text-xs">
+            {refreshEvents.error && (
+              <p className="text-destructive">{refreshEvents.error.message}</p>
+            )}
+            {refreshEvents.data && (
+              <p className="text-muted-foreground">
+                {refreshEvents.data.synced} synced from Google Calendar
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="border-b px-4 py-3">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setActiveSearch(search);
+            }}
+            className="flex max-w-xl items-center gap-2"
+          >
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search events"
+                className="pl-8"
+              />
+            </div>
+            <Button type="submit" variant="outline">
+              Search
+            </Button>
+            {activeSearch && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setSearch("");
+                  setActiveSearch("");
+                }}
+              >
+                Clear
+              </Button>
+            )}
+          </form>
+        </div>
+
+        <section className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-4 py-4">
+          {events.isLoading && <StatusLine>Loading events...</StatusLine>}
+          {events.error && (
+            <StatusLine tone="error">{events.error.message}</StatusLine>
+          )}
+
+          {events.data && (
+            <>
+              {events.data.length === 0 ? (
+                <div className="rounded-lg border border-dashed bg-background py-14 text-center">
+                  <p className="text-sm font-medium">No events this week</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your agenda is clear in this view.
+                  </p>
+                </div>
+              ) : (
+                <div className="mx-auto flex max-w-5xl flex-col gap-5">
+                  {groupedEvents.map((group) => (
+                    <section
+                      key={group.key}
+                      className="grid gap-3 md:grid-cols-[180px_1fr]"
+                    >
+                      <div>
+                        <h3 className="font-heading text-sm font-semibold">
+                          {group.label}
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          {group.events.length} event
+                          {group.events.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <ul className="flex flex-col gap-2">
+                        {group.events.map((event) => (
+                          <EventRow key={event.id} event={event} />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+
+      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+        <SheetContent className="w-full sm:max-w-xl">
+          <SheetHeader className="border-b">
+            <SheetTitle>Create event</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4">
+            <Input
+              type="text"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="Title"
+              autoFocus
+            />
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description"
+              rows={4}
+              className="resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            />
+            <Input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Location"
+            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Start
+                <Input
+                  type="datetime-local"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                End
+                <Input
+                  type="datetime-local"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
+              </label>
+            </div>
+            <Input
+              type="text"
+              value={attendees}
+              onChange={(e) => setAttendees(e.target.value)}
+              placeholder="Attendees (comma-separated)"
+            />
+
+            {(createDraft.error ?? sendInvite.error) && (
+              <p className="text-sm text-destructive">
+                {(createDraft.error ?? sendInvite.error)?.message}
+              </p>
+            )}
+          </div>
+
+          <SheetFooter className="border-t sm:flex-row sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => createDraft.mutate(eventInput)}
               disabled={createDraft.isPending || !summary || !start || !end}
-              className="rounded-md border border-white/[0.08] px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
             >
-              {createDraft.isPending ? "Saving…" : "Save draft"}
-            </button>
-            <button
+              {createDraft.isPending ? "Saving" : "Save draft"}
+            </Button>
+            <Button
               type="button"
               onClick={() => sendInvite.mutate(eventInput)}
               disabled={
@@ -316,19 +382,82 @@ export function CalendarPanel({
                 !end ||
                 parseAttendees().length === 0
               }
-              className="rounded-md bg-[#6E56CF] px-3 py-1.5 text-sm text-white hover:bg-[#7C6BDB] disabled:opacity-50"
             >
-              {sendInvite.isPending ? "Sending…" : "Send invite"}
-            </button>
+              {sendInvite.isPending ? "Sending" : "Send invite"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+function EventRow({ event }: { event: CalendarEvent }) {
+  return (
+    <li className="group rounded-lg border bg-background p-4 transition-colors hover:bg-card">
+      <div className="flex gap-3">
+        <div className="mt-1 h-10 w-1 shrink-0 rounded-full bg-primary/70" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            {event.htmlLink ? (
+              <a
+                href={event.htmlLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="truncate text-sm font-semibold hover:text-primary"
+              >
+                {event.summary || "Untitled"}
+              </a>
+            ) : (
+              <span className="truncate text-sm font-semibold">
+                {event.summary || "Untitled"}
+              </span>
+            )}
+            {event.start && (
+              <span className="text-xs font-medium text-muted-foreground">
+                {formatEventWhen(event.start, event.end)}
+              </span>
+            )}
           </div>
 
-          {(createDraft.error ?? sendInvite.error) && (
-            <p className="text-sm text-red-400">
-              {(createDraft.error ?? sendInvite.error)?.message}
+          {event.location && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5" />
+              {event.location}
+            </p>
+          )}
+          {event.description && (
+            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+              <LinkifiedText text={event.description} />
+            </p>
+          )}
+          {event.attendees.length > 0 && (
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{formatAttendees(event.attendees)}</span>
             </p>
           )}
         </div>
       </div>
-    </div>
+    </li>
+  );
+}
+
+function StatusLine({
+  children,
+  tone = "muted",
+}: {
+  children: React.ReactNode;
+  tone?: "muted" | "error";
+}) {
+  return (
+    <p
+      className={cn(
+        "px-4 py-4 text-sm",
+        tone === "error" ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      {children}
+    </p>
   );
 }

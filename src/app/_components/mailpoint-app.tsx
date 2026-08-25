@@ -7,14 +7,15 @@ import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
 import { CalendarPanel } from "@/app/_components/calendar-panel";
 import { GmailPanel } from "@/app/_components/gmail-panel";
+import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
 
 function EmptyState({ title, description }: { title: string; description: string }) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center gap-1 px-6 py-20 text-center">
-      <p className="text-sm font-medium text-zinc-300">{title}</p>
-      <p className="text-sm text-zinc-500">{description}</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -30,26 +31,27 @@ function SettingsPanel({
 }) {
   return (
     <div className="mx-auto max-w-3xl px-6 py-6">
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5">
-        <h2 className="mb-4 text-sm font-semibold text-zinc-100">Account</h2>
+      <div className="rounded-lg border bg-card p-5 text-card-foreground">
+        <h2 className="mb-4 text-sm font-semibold">Account</h2>
         <dl className="flex flex-col gap-3 text-sm">
-          <div className="flex justify-between border-b border-white/[0.06] pb-3">
-            <dt className="text-zinc-500">Name</dt>
-            <dd className="text-zinc-200">{user?.name || "—"}</dd>
+          <div className="flex justify-between border-b pb-3">
+            <dt className="text-muted-foreground">Name</dt>
+            <dd>{user?.name || "-"}</dd>
           </div>
-          <div className="flex justify-between border-b border-white/[0.06] pb-3">
-            <dt className="text-zinc-500">Email</dt>
-            <dd className="text-zinc-200">{user?.email || "—"}</dd>
+          <div className="flex justify-between border-b pb-3">
+            <dt className="text-muted-foreground">Email</dt>
+            <dd>{user?.email || "-"}</dd>
           </div>
         </dl>
-        <button
+        <Button
           type="button"
           onClick={onSignOut}
           disabled={isSigningOut}
-          className="mt-4 rounded-md border border-white/[0.08] px-3 py-1.5 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+          variant="outline"
+          className="mt-4"
         >
           {isSigningOut ? "Signing out…" : "Sign out"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -94,7 +96,7 @@ export function MailPointApp() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0A0A0C] text-zinc-100">
+    <div className="flex h-screen bg-background text-foreground">
       <AppSidebar
         activeSection={activeSection}
         onNavigate={setActiveSection}
