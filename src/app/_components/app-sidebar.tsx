@@ -92,23 +92,28 @@ export function AccountMenu({
   isSigningOut: boolean;
   onSettings: () => void;
   align?: "start" | "end";
-  children: React.ReactNode;
+  children: React.ReactElement;
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger render={children} />
       <DropdownMenuContent align={align} className="w-56">
         <div className="px-2 py-1.5">
           <p className="truncate text-sm font-medium text-foreground">
             {user?.name || "Signed in"}
           </p>
-          <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {user?.email}
+          </p>
         </div>
+
         <DropdownMenuSeparator />
+
         <DropdownMenuItem onClick={onSettings}>
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+
         <DropdownMenuItem
           onClick={onSignOut}
           disabled={isSigningOut}
