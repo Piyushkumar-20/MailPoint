@@ -289,6 +289,42 @@ export const gmailRouter = createTRPCRouter({
       };
     }),
 
+  deleteMessage: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await tenant.gmail.api.messages.trash({
+        id: input.messageId,
+      });
+
+      return {
+        id: input.messageId,
+      };
+    }),
+
+  deleteDraft: protectedProcedure
+    .input(
+      z.object({
+        draftId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await tenant.gmail.api.drafts.delete({
+        id: input.draftId,
+      });
+
+      return {
+        id: input.draftId,
+      };
+    }),
+
   sendEmail: protectedProcedure
     .input(
       z.object({

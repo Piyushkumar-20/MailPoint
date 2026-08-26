@@ -96,13 +96,13 @@ export function AccountMenu({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={children} />
+      <DropdownMenuTrigger>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-56">
         <div className="px-2 py-1.5">
-          <p className="truncate text-sm font-medium text-foreground">
+          <p className="text-foreground truncate text-sm font-medium">
             {user?.name || "Signed in"}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="text-muted-foreground truncate text-xs">
             {user?.email}
           </p>
         </div>
@@ -143,7 +143,7 @@ function NavGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="px-3 pb-1.5 pt-4 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/45">
+        <p className="text-sidebar-foreground/45 px-3 pt-4 pb-1.5 text-[11px] font-semibold tracking-wider uppercase">
           {label}
         </p>
       )}
@@ -195,20 +195,18 @@ function SidebarBody({
   showCollapseToggle: boolean;
 }) {
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+    <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
       <div
         className={cn(
-          "flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-4",
+          "border-sidebar-border flex h-14 shrink-0 items-center gap-2 border-b px-4",
           collapsed && "justify-center px-0",
         )}
       >
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] bg-sidebar-primary">
-          <Mail className="h-3.5 w-3.5 text-sidebar-primary-foreground" />
+        <div className="bg-sidebar-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px]">
+          <Mail className="text-sidebar-primary-foreground h-3.5 w-3.5" />
         </div>
         {!collapsed && (
-          <span className="font-heading text-sm font-semibold">
-            MailPoint
-          </span>
+          <span className="font-heading text-sm font-semibold">MailPoint</span>
         )}
       </div>
 
@@ -243,7 +241,7 @@ function SidebarBody({
         />
       </div>
 
-      <div className="shrink-0 border-t border-sidebar-border p-2">
+      <div className="border-sidebar-border shrink-0 border-t p-2">
         <AccountMenu
           user={user}
           onSignOut={onSignOut}
@@ -254,13 +252,13 @@ function SidebarBody({
           <button
             type="button"
             className={cn(
-              "flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition-colors hover:bg-sidebar-accent/70",
+              "hover:bg-sidebar-accent/70 flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition-colors",
               collapsed && "justify-center",
             )}
           >
             <Avatar className="h-7 w-7 shrink-0">
               <AvatarImage src={user?.image ?? undefined} alt="" />
-              <AvatarFallback className="bg-sidebar-primary/15 text-xs text-sidebar-primary">
+              <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary text-xs">
                 {initialsFor(user)}
               </AvatarFallback>
             </Avatar>
@@ -269,7 +267,7 @@ function SidebarBody({
                 <p className="truncate text-xs font-medium">
                   {user?.name || "Account"}
                 </p>
-                <p className="truncate text-[11px] text-sidebar-foreground/50">
+                <p className="text-sidebar-foreground/50 truncate text-[11px]">
                   {user?.email}
                 </p>
               </div>
@@ -282,7 +280,7 @@ function SidebarBody({
             type="button"
             onClick={() => onCollapsedChange(!collapsed)}
             className={cn(
-              "mt-1 flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-xs text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+              "text-sidebar-foreground/50 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground mt-1 flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-xs transition-colors",
               collapsed && "justify-center",
             )}
           >
@@ -327,7 +325,7 @@ export function AppSidebar({
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden shrink-0 border-r border-sidebar-border transition-[width] duration-150 md:block",
+          "border-sidebar-border hidden shrink-0 border-r transition-[width] duration-150 md:block",
           collapsed ? "w-[68px]" : "w-64",
         )}
       >
@@ -345,7 +343,7 @@ export function AppSidebar({
 
       {/* Mobile drawer */}
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="w-64 border-sidebar-border p-0">
+        <SheetContent side="left" className="border-sidebar-border w-64 p-0">
           <SidebarBody
             activeSection={activeSection}
             onNavigate={(section) => {

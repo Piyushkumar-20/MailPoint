@@ -9,6 +9,7 @@ import {
   Reply as ReplyIcon,
   Send,
   Star,
+  Trash2,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 
@@ -44,13 +45,15 @@ export function GmailPanel({
 
   const utils = api.useUtils();
 
+  const mailbox =
+    view === "starred" ? "starred" : view === "sent" ? "sent" : "inbox";
+
   const emails = api.gmail.searchEmails.useQuery(
     {
       query: searchQuery,
       limit: 50,
       offset: 0,
-      mailbox:
-        view === "starred" ? "starred" : view === "sent" ? "sent" : "inbox",
+      mailbox,
     },
     {
       enabled: view === "inbox" || view === "starred" || view === "sent",
@@ -125,6 +128,93 @@ export function GmailPanel({
   const sendDraft = api.gmail.sendDraft.useMutation({
     onSuccess: async () => {
       await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.listDrafts.invalidate();
+    },
+  });
+
+  /*
+   * Delete normal Gmail messages.
+   *
+   * The UI is updated optimistically so the deleted email disappears
+   * immediately instead of waiting for the Gmail API/refetch cycle.
+   */
+  const deleteMessage = api.gmail.deleteMessage.useMutation({
+    onMutate: async ({ messageId }) => {
+      /*
+       * Stop an in-flight search request from overwriting our optimistic
+       * update with the old list.
+       */
+      await utils.gmail.searchEmails.cancel();
+
+      /*
+       * Remove the message immediately from the currently visible
+       * Inbox / Starred / Sent query.
+       */
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+
+          return current.filter((email) => email.id !== messageId);
+        },
+      );
+
+      /*
+       * If the deleted message is currently open in the reading pane,
+       * close it immediately as well.
+       */
+      if (selectedId === messageId) {
+        setSelectedId(null);
+      }
+    },
+
+    onSuccess: async () => {
+      /*
+       * Confirm the optimistic update against the real Gmail state.
+       */
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+    },
+
+    onError: async () => {
+      /*
+       * If Gmail rejects the delete, refetch the list so the removed
+       * message comes back.
+       */
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+  /*
+   * Delete a Gmail draft permanently.
+   */
+  const deleteDraft = api.gmail.deleteDraft.useMutation({
+    onMutate: async ({ draftId }) => {
+      await utils.gmail.listDrafts.cancel();
+
+      utils.gmail.listDrafts.setData(
+        {
+          limit: 50,
+          offset: 0,
+        },
+        (current) => {
+          if (!current) return current;
+
+          return current.filter((draft) => draft.id !== draftId);
+        },
+      );
+    },
+
+    onSuccess: async () => {
+      await utils.gmail.listDrafts.invalidate();
+    },
+
+    onError: async () => {
       await utils.gmail.listDrafts.invalidate();
     },
   });
@@ -272,6 +362,8 @@ export function GmailPanel({
                 error={emails.error?.message}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
+                onDelete={(messageId) => deleteMessage.mutate({ messageId })}
+                isDeleting={deleteMessage.isPending}
               />
             )}
 
@@ -281,7 +373,9 @@ export function GmailPanel({
                 isLoading={drafts.isLoading}
                 error={drafts.error?.message}
                 isSending={sendDraft.isPending}
+                isDeleting={deleteDraft.isPending}
                 onSend={(draftId) => sendDraft.mutate({ draftId })}
+                onDelete={(draftId) => deleteDraft.mutate({ draftId })}
               />
             )}
           </section>
@@ -495,6 +589,8 @@ function MailList({
   error,
   selectedId,
   onSelect,
+  onDelete,
+  isDeleting,
 }: {
   emails:
     | {
@@ -509,6 +605,8 @@ function MailList({
   error?: string;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+  isDeleting: boolean;
 }) {
   if (isLoading) {
     return <StatusLine>Loading mail...</StatusLine>;
@@ -531,16 +629,18 @@ function MailList({
     <ul>
       {emails.map((email) => (
         <li key={email.id} className="border-b">
-          <button
-            type="button"
-            onClick={() => onSelect(email.id)}
+          <div
             className={cn(
-              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-l-2 border-l-transparent px-4 py-3 text-left transition-colors",
+              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-l-2 border-l-transparent px-4 py-3 transition-colors",
               selectedId === email.id &&
                 "border-l-primary bg-primary/10 hover:bg-primary/15",
             )}
           >
-            <span className="min-w-0">
+            <button
+              type="button"
+              onClick={() => onSelect(email.id)}
+              className="min-w-0 text-left"
+            >
               <span className="block truncate text-sm font-semibold">
                 {email.from ? formatSender(email.from) : "Unknown sender"}
               </span>
@@ -554,14 +654,37 @@ function MailList({
                   {email.snippet}
                 </span>
               )}
-            </span>
+            </button>
 
-            {email.date && (
-              <span className="text-muted-foreground shrink-0 pt-0.5 text-xs">
-                {formatMessageDate(email.date)}
-              </span>
-            )}
-          </button>
+            <div className="flex shrink-0 items-start gap-2">
+              {email.date && (
+                <span className="text-muted-foreground pt-0.5 text-xs">
+                  {formatMessageDate(email.date)}
+                </span>
+              )}
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive h-7 w-7"
+                aria-label="Delete email"
+                title="Delete email"
+                onClick={(event) => {
+                  event.stopPropagation();
+
+                  const confirmed = window.confirm("Move this email to Trash?");
+
+                  if (!confirmed) return;
+
+                  onDelete(email.id);
+                }}
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </li>
       ))}
     </ul>
@@ -573,7 +696,9 @@ function DraftList({
   isLoading,
   error,
   isSending,
+  isDeleting,
   onSend,
+  onDelete,
 }: {
   drafts:
     | {
@@ -585,7 +710,9 @@ function DraftList({
   isLoading: boolean;
   error?: string;
   isSending: boolean;
+  isDeleting: boolean;
   onSend: (draftId: string) => void;
+  onDelete: (draftId: string) => void;
 }) {
   if (isLoading) {
     return <StatusLine>Loading drafts...</StatusLine>;
@@ -621,15 +748,38 @@ function DraftList({
             )}
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onSend(draft.id)}
-            disabled={isSending}
-          >
-            Send
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onSend(draft.id)}
+              disabled={isSending || isDeleting}
+            >
+              {isSending ? "Sending" : "Send"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive h-8 w-8"
+              aria-label="Delete draft"
+              title="Delete draft"
+              onClick={() => {
+                const confirmed = window.confirm(
+                  "Delete this draft permanently?",
+                );
+
+                if (!confirmed) return;
+
+                onDelete(draft.id);
+              }}
+              disabled={isSending || isDeleting}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </li>
       ))}
     </ul>

@@ -58,9 +58,9 @@ function mapEvent(event: {
   };
 }
 
-function dedupeByEntityId<
-  T extends { entity_id: string; updated_at: Date },
->(items: T[]): T[] {
+function dedupeByEntityId<T extends { entity_id: string; updated_at: Date }>(
+  items: T[],
+): T[] {
   const byEntityId = new Map<string, T>();
 
   for (const item of items) {
@@ -74,9 +74,11 @@ function dedupeByEntityId<
   return Array.from(byEntityId.values());
 }
 
-function filterEventsByWeek<
-  T extends { timestamp: number; start: string },
->(events: T[], weekStart: Date, weekEnd: Date): T[] {
+function filterEventsByWeek<T extends { timestamp: number; start: string }>(
+  events: T[],
+  weekStart: Date,
+  weekEnd: Date,
+): T[] {
   const startMs = weekStart.getTime();
   const endMs = weekEnd.getTime();
 
@@ -271,6 +273,26 @@ export const calendarRouter = createTRPCRouter({
       return {
         id: event.id ?? input.id,
         htmlLink: event.htmlLink ?? "",
+      };
+    }),
+
+  deleteEvent: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await tenant.googlecalendar.api.events.delete({
+        calendarId: "primary",
+        id: input.id,
+        sendUpdates: "all",
+      });
+
+      return {
+        id: input.id,
       };
     }),
 });

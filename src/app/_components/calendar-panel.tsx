@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, MapPin, Pencil, RefreshCw, Search, Users } from "lucide-react";
-
 import {
-  formatAttendees,
-  formatEventWhen,
-  LinkifiedText,
-} from "@/lib/display";
+  CalendarPlus,
+  MapPin,
+  Pencil,
+  RefreshCw,
+  Search,
+  Users,
+} from "lucide-react";
+
+import { formatAttendees, formatEventWhen, LinkifiedText } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { getWeekBounds } from "@/lib/week";
 import { api } from "@/trpc/react";
@@ -111,8 +114,9 @@ export function CalendarPanel({
   const [activeSearch, setActiveSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] =
-    useState<CalendarEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
+    null,
+  );
 
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
 
@@ -181,6 +185,16 @@ export function CalendarPanel({
     },
   });
 
+  const deleteEvent = api.calendar.deleteEvent.useMutation({
+    onSuccess: async () => {
+      await utils.calendar.searchEvents.invalidate();
+
+      resetForm();
+      setEditOpen(false);
+      setSelectedEvent(null);
+    },
+  });
+
   function resetForm() {
     setSummary("");
     setDescription("");
@@ -228,11 +242,9 @@ export function CalendarPanel({
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
           <div className="min-w-0">
-            <h2 className="font-heading text-base font-semibold">
-              Calendar
-            </h2>
+            <h2 className="font-heading text-base font-semibold">Calendar</h2>
 
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {week.start.toLocaleDateString(undefined, {
                 month: "short",
                 day: "numeric",
@@ -270,11 +282,7 @@ export function CalendarPanel({
               </span>
             </Button>
 
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setCreateOpen(true)}
-            >
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <CalendarPlus className="h-3.5 w-3.5" />
               Create
             </Button>
@@ -284,9 +292,7 @@ export function CalendarPanel({
         {(refreshEvents.data || refreshEvents.error) && (
           <div className="border-b px-4 py-2 text-xs">
             {refreshEvents.error && (
-              <p className="text-destructive">
-                {refreshEvents.error.message}
-              </p>
+              <p className="text-destructive">{refreshEvents.error.message}</p>
             )}
 
             {refreshEvents.data && (
@@ -306,7 +312,7 @@ export function CalendarPanel({
             className="flex max-w-xl items-center gap-2"
           >
             <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
 
               <Input
                 type="text"
@@ -336,24 +342,20 @@ export function CalendarPanel({
           </form>
         </div>
 
-        <section className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-4 py-4">
+        <section className="bg-muted/20 min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {events.isLoading && <StatusLine>Loading events...</StatusLine>}
 
           {events.error && (
-            <StatusLine tone="error">
-              {events.error.message}
-            </StatusLine>
+            <StatusLine tone="error">{events.error.message}</StatusLine>
           )}
 
           {events.data && (
             <>
               {events.data.length === 0 ? (
-                <div className="rounded-lg border border-dashed bg-background py-14 text-center">
-                  <p className="text-sm font-medium">
-                    No events this week
-                  </p>
+                <div className="bg-background rounded-lg border border-dashed py-14 text-center">
+                  <p className="text-sm font-medium">No events this week</p>
 
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="text-muted-foreground mt-1 text-sm">
                     Your agenda is clear in this view.
                   </p>
                 </div>
@@ -369,7 +371,7 @@ export function CalendarPanel({
                           {group.label}
                         </h3>
 
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground text-xs">
                           {group.events.length} event
                           {group.events.length === 1 ? "" : "s"}
                         </p>
@@ -414,7 +416,7 @@ export function CalendarPanel({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Description"
               rows={4}
-              className="resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
             />
 
             <Input
@@ -425,9 +427,8 @@ export function CalendarPanel({
             />
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 Start
-
                 <Input
                   type="datetime-local"
                   value={start}
@@ -435,9 +436,8 @@ export function CalendarPanel({
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 End
-
                 <Input
                   type="datetime-local"
                   value={end}
@@ -454,7 +454,7 @@ export function CalendarPanel({
             />
 
             {(createDraft.error ?? sendInvite.error) && (
-              <p className="text-sm text-destructive">
+              <p className="text-destructive text-sm">
                 {(createDraft.error ?? sendInvite.error)?.message}
               </p>
             )}
@@ -465,12 +465,7 @@ export function CalendarPanel({
               type="button"
               variant="outline"
               onClick={() => createDraft.mutate(eventInput)}
-              disabled={
-                createDraft.isPending ||
-                !summary ||
-                !start ||
-                !end
-              }
+              disabled={createDraft.isPending || !summary || !start || !end}
             >
               {createDraft.isPending ? "Saving" : "Save draft"}
             </Button>
@@ -513,7 +508,7 @@ export function CalendarPanel({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Description"
               rows={4}
-              className="resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
             />
 
             <Input
@@ -524,9 +519,8 @@ export function CalendarPanel({
             />
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 Start
-
                 <Input
                   type="datetime-local"
                   value={start}
@@ -534,9 +528,8 @@ export function CalendarPanel({
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 End
-
                 <Input
                   type="datetime-local"
                   value={end}
@@ -552,43 +545,67 @@ export function CalendarPanel({
               placeholder="Attendees (comma-separated)"
             />
 
-            {updateEvent.error && (
-              <p className="text-sm text-destructive">
-                {updateEvent.error.message}
+            {(updateEvent.error || deleteEvent.error) && (
+              <p className="text-destructive text-sm">
+                {(updateEvent.error ?? deleteEvent.error)?.message}
               </p>
             )}
           </div>
 
-          <SheetFooter className="border-t sm:flex-row sm:justify-end">
+          <SheetFooter className="border-t sm:flex-row sm:justify-between">
             <Button
               type="button"
-              variant="outline"
-              onClick={() => setEditOpen(false)}
-              disabled={updateEvent.isPending}
-            >
-              Cancel
-            </Button>
-
-            <Button
-              type="button"
+              variant="destructive"
               onClick={() => {
                 if (!selectedEvent) return;
 
-                updateEvent.mutate({
+                const confirmed = window.confirm(
+                  "Delete this event? Attendees will be notified.",
+                );
+
+                if (!confirmed) return;
+
+                deleteEvent.mutate({
                   id: selectedEvent.id,
-                  ...eventInput,
                 });
               }}
-              disabled={
-                updateEvent.isPending ||
-                !selectedEvent ||
-                !summary ||
-                !start ||
-                !end
-              }
+              disabled={deleteEvent.isPending || updateEvent.isPending}
             >
-              {updateEvent.isPending ? "Saving" : "Save changes"}
+              {deleteEvent.isPending ? "Deleting" : "Delete event"}
             </Button>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditOpen(false)}
+                disabled={updateEvent.isPending || deleteEvent.isPending}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!selectedEvent) return;
+
+                  updateEvent.mutate({
+                    id: selectedEvent.id,
+                    ...eventInput,
+                  });
+                }}
+                disabled={
+                  updateEvent.isPending ||
+                  deleteEvent.isPending ||
+                  !selectedEvent ||
+                  !summary ||
+                  !start ||
+                  !end
+                }
+              >
+                {updateEvent.isPending ? "Saving" : "Save changes"}
+              </Button>
+            </div>
           </SheetFooter>
         </SheetContent>
       </Sheet>
@@ -604,42 +621,42 @@ function EventRow({
   onEdit: () => void;
 }) {
   return (
-    <li className="group rounded-lg border bg-background p-4 transition-colors hover:bg-card">
+    <li className="group bg-background hover:bg-card rounded-lg border p-4 transition-colors">
       <div className="flex gap-3">
-        <div className="mt-1 h-10 w-1 shrink-0 rounded-full bg-primary/70" />
+        <div className="bg-primary/70 mt-1 h-10 w-1 shrink-0 rounded-full" />
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <button
               type="button"
               onClick={onEdit}
-              className="min-w-0 truncate text-left text-sm font-semibold hover:text-primary"
+              className="hover:text-primary min-w-0 truncate text-left text-sm font-semibold"
             >
               {event.summary || "Untitled"}
             </button>
 
             {event.start && (
-              <span className="text-xs font-medium text-muted-foreground">
+              <span className="text-muted-foreground text-xs font-medium">
                 {formatEventWhen(event.start, event.end)}
               </span>
             )}
           </div>
 
           {event.location && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
               <MapPin className="h-3.5 w-3.5" />
               {event.location}
             </p>
           )}
 
           {event.description && (
-            <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+            <p className="text-muted-foreground mt-2 line-clamp-3 text-sm leading-6 whitespace-pre-wrap">
               <LinkifiedText text={event.description} />
             </p>
           )}
 
           {event.attendees.length > 0 && (
-            <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <p className="text-muted-foreground mt-3 flex items-start gap-1.5 text-xs">
               <Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{formatAttendees(event.attendees)}</span>
             </p>
@@ -673,9 +690,7 @@ function StatusLine({
     <p
       className={cn(
         "px-4 py-4 text-sm",
-        tone === "error"
-          ? "text-destructive"
-          : "text-muted-foreground",
+        tone === "error" ? "text-destructive" : "text-muted-foreground",
       )}
     >
       {children}
