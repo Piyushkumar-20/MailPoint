@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Reply as ReplyIcon,
   Send,
+  Star,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 
@@ -114,6 +115,13 @@ export function GmailPanel({
     },
   });
 
+  const modifyMessageLabels = api.gmail.modifyMessageLabels.useMutation({
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+    },
+  });
+
   const sendDraft = api.gmail.sendDraft.useMutation({
     onSuccess: async () => {
       await utils.gmail.searchEmails.invalidate();
@@ -123,10 +131,7 @@ export function GmailPanel({
 
   const canSubmitCompose = Boolean(to && subject && body);
 
-  const openReply = (email: {
-    from: string;
-    subject: string;
-  }) => {
+  const openReply = (email: { from: string; subject: string }) => {
     setTo(email.from);
 
     setSubject(
@@ -166,6 +171,26 @@ export function GmailPanel({
 
     setBody(forwardedMessage);
     setForwardOpen(true);
+  };
+
+  const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
+
+  const toggleStar = () => {
+    if (!selectedEmail.data?.id || modifyMessageLabels.isPending) {
+      return;
+    }
+
+    if (isStarred) {
+      modifyMessageLabels.mutate({
+        messageId: selectedEmail.data.id,
+        removeLabelIds: ["STARRED"],
+      });
+    } else {
+      modifyMessageLabels.mutate({
+        messageId: selectedEmail.data.id,
+        addLabelIds: ["STARRED"],
+      });
+    }
   };
 
   return (
@@ -240,9 +265,7 @@ export function GmailPanel({
               selectedId && "hidden lg:block",
             )}
           >
-            {(view === "inbox" ||
-              view === "starred" ||
-              view === "sent") && (
+            {(view === "inbox" || view === "starred" || view === "sent") && (
               <MailList
                 emails={emails.data}
                 isLoading={emails.isLoading}
@@ -278,6 +301,9 @@ export function GmailPanel({
               view={view}
               onReply={openReply}
               onForward={openForward}
+              isStarred={isStarred}
+              isStarPending={modifyMessageLabels.isPending}
+              onToggleStar={toggleStar}
             />
           </section>
         </div>
@@ -619,6 +645,9 @@ function ReadingPane({
   view,
   onReply,
   onForward,
+  isStarred,
+  isStarPending,
+  onToggleStar,
 }: {
   selectedId: string | null;
   selectedEmail:
@@ -632,30 +661,29 @@ function ReadingPane({
         bodyMimeType: "text/plain" | "text/html";
         snippet: string;
         date: string | null;
+        labelIds: string[];
       }
     | undefined;
   isLoading: boolean;
   error?: string;
   onBack: () => void;
   view: "inbox" | "starred" | "drafts" | "sent";
-  onReply: (email: {
-    from: string;
-    subject: string;
-  }) => void;
+  onReply: (email: { from: string; subject: string }) => void;
   onForward: (email: {
     from: string;
     to: string;
     subject: string;
     body: string;
   }) => void;
+  isStarred: boolean;
+  isStarPending: boolean;
+  onToggleStar: () => void;
 }) {
   if (!selectedId) {
     return (
       <div className="flex h-full items-center justify-center px-8 text-center">
         <div>
-          <p className="font-heading text-sm font-semibold">
-            Select a message
-          </p>
+          <p className="font-heading text-sm font-semibold">Select a message</p>
 
           <p className="text-muted-foreground mt-1 text-sm">
             Your reading pane keeps the conversation in context.
@@ -684,9 +712,29 @@ function ReadingPane({
 
       {selectedEmail && (
         <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm">
-          <h2 className="font-heading text-xl leading-tight font-semibold">
-            {selectedEmail.subject || "(no subject)"}
-          </h2>
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="font-heading min-w-0 text-xl leading-tight font-semibold">
+              {selectedEmail.subject || "(no subject)"}
+            </h2>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onToggleStar}
+              disabled={isStarPending}
+              aria-label={isStarred ? "Unstar email" : "Star email"}
+              title={isStarred ? "Unstar" : "Star"}
+              className="shrink-0"
+            >
+              <Star
+                className={cn(
+                  "h-5 w-5",
+                  isStarred && "fill-primary text-primary",
+                )}
+              />
+            </Button>
+          </div>
 
           <div className="text-muted-foreground mt-4 space-y-1 text-sm">
             <p>

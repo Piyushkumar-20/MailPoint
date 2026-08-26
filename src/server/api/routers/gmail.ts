@@ -63,12 +63,15 @@ function dedupeByEntityId<T extends { entity_id: string; updated_at: Date }>(
   items: T[],
 ): T[] {
   const byEntityId = new Map<string, T>();
+
   for (const item of items) {
     const existing = byEntityId.get(item.entity_id);
+
     if (!existing || item.updated_at > existing.updated_at) {
       byEntityId.set(item.entity_id, item);
     }
   }
+
   return Array.from(byEntityId.values());
 }
 
@@ -78,6 +81,7 @@ export const gmailRouter = createTRPCRouter({
       tenantId: ctx.session.user.id,
     });
   }),
+
   searchEmails: protectedProcedure
     .input(
       paginationSchema.extend({
@@ -144,28 +148,41 @@ export const gmailRouter = createTRPCRouter({
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const cached = await tenant.gmail.db.messages.findByEntityId(input.id);
 
       if (cached?.data.body || cached?.data.subject) {
         const cachedData = cached.data as typeof cached.data & {
           bodyMimeType?: "text/plain" | "text/html";
+          labelIds?: string[];
         };
-        const body = cachedData.body ?? cachedData.snippet ?? "";
-        const bodyMimeType =
-          cachedData.bodyMimeType ??
-          (looksLikeHtml(body) ? "text/html" : "text/plain");
 
-        return {
-          id: cached.entity_id,
-          threadId: cachedData.threadId ?? "",
-          subject: cachedData.subject ?? "",
-          from: cachedData.from ?? "",
-          to: cachedData.to ?? "",
-          body,
-          bodyMimeType,
-          snippet: cachedData.snippet ?? "",
-          date: cachedData.internalDate ?? null,
-        };
+        /*
+         * Corsair's cached Gmail entity may not contain labelIds.
+         * If label information is available, use the cache directly.
+         * Otherwise fetch the current Gmail message so Star/Unstar state
+         * is always accurate.
+         */
+        if (Array.isArray(cachedData.labelIds)) {
+          const body = cachedData.body ?? cachedData.snippet ?? "";
+
+          const bodyMimeType =
+            cachedData.bodyMimeType ??
+            (looksLikeHtml(body) ? "text/html" : "text/plain");
+
+          return {
+            id: cached.entity_id,
+            threadId: cachedData.threadId ?? "",
+            subject: cachedData.subject ?? "",
+            from: cachedData.from ?? "",
+            to: cachedData.to ?? "",
+            body,
+            bodyMimeType,
+            snippet: cachedData.snippet ?? "",
+            date: cachedData.internalDate ?? null,
+            labelIds: cachedData.labelIds,
+          };
+        }
       }
 
       const message = await tenant.gmail.api.messages.get({
@@ -175,7 +192,9 @@ export const gmailRouter = createTRPCRouter({
 
       const headers = message.payload?.headers;
       const extractedBody = extractBodyFromPayload(message.payload);
+
       const body = extractedBody.body || message.snippet || "";
+
       const bodyMimeType =
         extractedBody.body || !body
           ? extractedBody.bodyMimeType
@@ -194,6 +213,7 @@ export const gmailRouter = createTRPCRouter({
         snippet: message.snippet ?? "",
         date:
           message.internalDate != null ? String(message.internalDate) : null,
+        labelIds: message.labelIds ?? [],
       };
     }),
 
@@ -201,6 +221,7 @@ export const gmailRouter = createTRPCRouter({
     .input(paginationSchema)
     .query(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const drafts = await tenant.gmail.db.drafts.list({
         limit: input.limit,
         offset: input.offset,
@@ -236,10 +257,17 @@ export const gmailRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const raw = encodeRawEmail(input);
+
       const draft = await tenant.gmail.api.drafts.create({
-        draft: { message: { raw } },
+        draft: {
+          message: {
+            raw,
+          },
+        },
       });
+
       return {
         id: draft.id ?? "",
         messageId: draft.message?.id ?? "",
@@ -250,7 +278,11 @@ export const gmailRouter = createTRPCRouter({
     .input(z.object({ draftId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
-      const message = await tenant.gmail.api.drafts.send({ id: input.draftId });
+
+      const message = await tenant.gmail.api.drafts.send({
+        id: input.draftId,
+      });
+
       return {
         id: message.id ?? "",
         threadId: message.threadId ?? "",
@@ -267,8 +299,13 @@ export const gmailRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const raw = encodeRawEmail(input);
-      const message = await tenant.gmail.api.messages.send({ raw });
+
+      const message = await tenant.gmail.api.messages.send({
+        raw,
+      });
+
       return {
         id: message.id ?? "",
         threadId: message.threadId ?? "",
@@ -301,6 +338,30 @@ export const gmailRouter = createTRPCRouter({
       return {
         id: message.id ?? "",
         threadId: message.threadId ?? input.threadId,
+      };
+    }),
+
+  modifyMessageLabels: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.string().min(1),
+        addLabelIds: z.array(z.string()).optional(),
+        removeLabelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const message = await tenant.gmail.api.messages.modify({
+        id: input.messageId,
+        addLabelIds: input.addLabelIds,
+        removeLabelIds: input.removeLabelIds,
+      });
+
+      return {
+        id: message.id ?? input.messageId,
+        threadId: message.threadId ?? "",
+        labelIds: message.labelIds ?? [],
       };
     }),
 });
