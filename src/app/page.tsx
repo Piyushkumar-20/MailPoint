@@ -1,16 +1,17 @@
 import { redirect } from "next/navigation";
-
-import { auth } from "@/server/lib/auth";
 import { headers } from "next/headers";
+
+import { LandingPage } from "@/components/landing/landing-page";
+import { auth } from "@/server/lib/auth";
 
 export default async function Home() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
 
-  if (!session?.user) {
-    redirect("/login");
+  if (session?.user) {
+    redirect("/dashboard");
   }
 
-  redirect("/dashboard");
+  return <LandingPage />;
 }
