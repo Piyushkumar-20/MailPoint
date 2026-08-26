@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, MapPin, RefreshCw, Search, Users } from "lucide-react";
+import { CalendarPlus, MapPin, Pencil, RefreshCw, Search, Users } from "lucide-react";
 
 import {
   formatAttendees,
@@ -23,7 +23,20 @@ import {
 
 function toDatetimeLocalValue(date: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toDatetimeLocalFromIso(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return toDatetimeLocalValue(date);
 }
 
 type CalendarEvent = {
@@ -40,13 +53,17 @@ type CalendarEvent = {
 
 function dayKey(value: string) {
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "Undated";
+
   return date.toDateString();
 }
 
 function dayLabel(value: string) {
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "Undated";
+
   return date.toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
@@ -56,15 +73,29 @@ function dayLabel(value: string) {
 
 function groupEventsByDay(events: CalendarEvent[]) {
   const groups = new Map<string, CalendarEvent[]>();
+
   for (const event of events) {
     const key = dayKey(event.start);
+
     groups.set(key, [...(groups.get(key) ?? []), event]);
   }
+
   return Array.from(groups.entries()).map(([key, items]) => ({
     key,
     label: dayLabel(items[0]?.start ?? ""),
     events: items,
   }));
+}
+
+function extractAttendeeEmails(attendees: string[]) {
+  return attendees
+    .map((attendee) => {
+      const emailMatch = attendee.match(/<([^>]+)>/);
+
+      return emailMatch?.[1] ?? attendee;
+    })
+    .map((email) => email.trim())
+    .filter(Boolean);
 }
 
 export function CalendarPanel({
@@ -79,12 +110,18 @@ export function CalendarPanel({
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] =
+    useState<CalendarEvent | null>(null);
 
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
 
   const defaultStart = new Date();
+
   defaultStart.setMinutes(0, 0, 0);
+
   const defaultEnd = new Date(defaultStart);
+
   defaultEnd.setHours(defaultEnd.getHours() + 1);
 
   const [summary, setSummary] = useState("");
@@ -119,6 +156,7 @@ export function CalendarPanel({
   const createDraft = api.calendar.createDraft.useMutation({
     onSuccess: async () => {
       await utils.calendar.searchEvents.invalidate();
+
       resetForm();
       setCreateOpen(false);
     },
@@ -127,8 +165,19 @@ export function CalendarPanel({
   const sendInvite = api.calendar.sendInvite.useMutation({
     onSuccess: async () => {
       await utils.calendar.searchEvents.invalidate();
+
       resetForm();
       setCreateOpen(false);
+    },
+  });
+
+  const updateEvent = api.calendar.updateEvent.useMutation({
+    onSuccess: async () => {
+      await utils.calendar.searchEvents.invalidate();
+
+      resetForm();
+      setEditOpen(false);
+      setSelectedEvent(null);
     },
   });
 
@@ -159,6 +208,19 @@ export function CalendarPanel({
     attendees: parseAttendees(),
   };
 
+  function openEditEvent(event: CalendarEvent) {
+    setSelectedEvent(event);
+
+    setSummary(event.summary);
+    setDescription(event.description);
+    setLocation(event.location);
+    setStart(toDatetimeLocalFromIso(event.start));
+    setEnd(toDatetimeLocalFromIso(event.end));
+    setAttendees(extractAttendeeEmails(event.attendees).join(", "));
+
+    setEditOpen(true);
+  }
+
   const groupedEvents = groupEventsByDay(events.data ?? []);
 
   return (
@@ -166,7 +228,10 @@ export function CalendarPanel({
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
           <div className="min-w-0">
-            <h2 className="font-heading text-base font-semibold">Calendar</h2>
+            <h2 className="font-heading text-base font-semibold">
+              Calendar
+            </h2>
+
             <p className="text-xs text-muted-foreground">
               {week.start.toLocaleDateString(undefined, {
                 month: "short",
@@ -199,11 +264,17 @@ export function CalendarPanel({
                   refreshEvents.isPending && "animate-spin",
                 )}
               />
+
               <span className="hidden sm:inline">
                 {refreshEvents.isPending ? "Refreshing" : "Refresh"}
               </span>
             </Button>
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+            >
               <CalendarPlus className="h-3.5 w-3.5" />
               Create
             </Button>
@@ -213,8 +284,11 @@ export function CalendarPanel({
         {(refreshEvents.data || refreshEvents.error) && (
           <div className="border-b px-4 py-2 text-xs">
             {refreshEvents.error && (
-              <p className="text-destructive">{refreshEvents.error.message}</p>
+              <p className="text-destructive">
+                {refreshEvents.error.message}
+              </p>
             )}
+
             {refreshEvents.data && (
               <p className="text-muted-foreground">
                 {refreshEvents.data.synced} synced from Google Calendar
@@ -233,6 +307,7 @@ export function CalendarPanel({
           >
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+
               <Input
                 type="text"
                 value={search}
@@ -241,9 +316,11 @@ export function CalendarPanel({
                 className="pl-8"
               />
             </div>
+
             <Button type="submit" variant="outline">
               Search
             </Button>
+
             {activeSearch && (
               <Button
                 type="button"
@@ -261,15 +338,21 @@ export function CalendarPanel({
 
         <section className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-4 py-4">
           {events.isLoading && <StatusLine>Loading events...</StatusLine>}
+
           {events.error && (
-            <StatusLine tone="error">{events.error.message}</StatusLine>
+            <StatusLine tone="error">
+              {events.error.message}
+            </StatusLine>
           )}
 
           {events.data && (
             <>
               {events.data.length === 0 ? (
                 <div className="rounded-lg border border-dashed bg-background py-14 text-center">
-                  <p className="text-sm font-medium">No events this week</p>
+                  <p className="text-sm font-medium">
+                    No events this week
+                  </p>
+
                   <p className="mt-1 text-sm text-muted-foreground">
                     Your agenda is clear in this view.
                   </p>
@@ -285,14 +368,20 @@ export function CalendarPanel({
                         <h3 className="font-heading text-sm font-semibold">
                           {group.label}
                         </h3>
+
                         <p className="text-xs text-muted-foreground">
                           {group.events.length} event
                           {group.events.length === 1 ? "" : "s"}
                         </p>
                       </div>
+
                       <ul className="flex flex-col gap-2">
                         {group.events.map((event) => (
-                          <EventRow key={event.id} event={event} />
+                          <EventRow
+                            key={event.id}
+                            event={event}
+                            onEdit={() => openEditEvent(event)}
+                          />
                         ))}
                       </ul>
                     </section>
@@ -304,6 +393,7 @@ export function CalendarPanel({
         </section>
       </div>
 
+      {/* Create Event */}
       <Sheet open={createOpen} onOpenChange={setCreateOpen}>
         <SheetContent className="w-full sm:max-w-xl">
           <SheetHeader className="border-b">
@@ -318,6 +408,7 @@ export function CalendarPanel({
               placeholder="Title"
               autoFocus
             />
+
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -325,23 +416,28 @@ export function CalendarPanel({
               rows={4}
               className="resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
+
             <Input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               placeholder="Location"
             />
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 Start
+
                 <Input
                   type="datetime-local"
                   value={start}
                   onChange={(e) => setStart(e.target.value)}
                 />
               </label>
+
               <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
                 End
+
                 <Input
                   type="datetime-local"
                   value={end}
@@ -349,6 +445,7 @@ export function CalendarPanel({
                 />
               </label>
             </div>
+
             <Input
               type="text"
               value={attendees}
@@ -368,10 +465,16 @@ export function CalendarPanel({
               type="button"
               variant="outline"
               onClick={() => createDraft.mutate(eventInput)}
-              disabled={createDraft.isPending || !summary || !start || !end}
+              disabled={
+                createDraft.isPending ||
+                !summary ||
+                !start ||
+                !end
+              }
             >
               {createDraft.isPending ? "Saving" : "Save draft"}
             </Button>
+
             <Button
               type="button"
               onClick={() => sendInvite.mutate(eventInput)}
@@ -388,31 +491,133 @@ export function CalendarPanel({
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {/* Edit Event */}
+      <Sheet open={editOpen} onOpenChange={setEditOpen}>
+        <SheetContent className="w-full sm:max-w-xl">
+          <SheetHeader className="border-b">
+            <SheetTitle>Edit event</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4">
+            <Input
+              type="text"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="Title"
+              autoFocus
+            />
+
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description"
+              rows={4}
+              className="resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            />
+
+            <Input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Location"
+            />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                Start
+
+                <Input
+                  type="datetime-local"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+                End
+
+                <Input
+                  type="datetime-local"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <Input
+              type="text"
+              value={attendees}
+              onChange={(e) => setAttendees(e.target.value)}
+              placeholder="Attendees (comma-separated)"
+            />
+
+            {updateEvent.error && (
+              <p className="text-sm text-destructive">
+                {updateEvent.error.message}
+              </p>
+            )}
+          </div>
+
+          <SheetFooter className="border-t sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={updateEvent.isPending}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => {
+                if (!selectedEvent) return;
+
+                updateEvent.mutate({
+                  id: selectedEvent.id,
+                  ...eventInput,
+                });
+              }}
+              disabled={
+                updateEvent.isPending ||
+                !selectedEvent ||
+                !summary ||
+                !start ||
+                !end
+              }
+            >
+              {updateEvent.isPending ? "Saving" : "Save changes"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
 
-function EventRow({ event }: { event: CalendarEvent }) {
+function EventRow({
+  event,
+  onEdit,
+}: {
+  event: CalendarEvent;
+  onEdit: () => void;
+}) {
   return (
     <li className="group rounded-lg border bg-background p-4 transition-colors hover:bg-card">
       <div className="flex gap-3">
         <div className="mt-1 h-10 w-1 shrink-0 rounded-full bg-primary/70" />
+
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            {event.htmlLink ? (
-              <a
-                href={event.htmlLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-sm font-semibold hover:text-primary"
-              >
-                {event.summary || "Untitled"}
-              </a>
-            ) : (
-              <span className="truncate text-sm font-semibold">
-                {event.summary || "Untitled"}
-              </span>
-            )}
+            <button
+              type="button"
+              onClick={onEdit}
+              className="min-w-0 truncate text-left text-sm font-semibold hover:text-primary"
+            >
+              {event.summary || "Untitled"}
+            </button>
+
             {event.start && (
               <span className="text-xs font-medium text-muted-foreground">
                 {formatEventWhen(event.start, event.end)}
@@ -426,11 +631,13 @@ function EventRow({ event }: { event: CalendarEvent }) {
               {event.location}
             </p>
           )}
+
           {event.description && (
             <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
               <LinkifiedText text={event.description} />
             </p>
           )}
+
           {event.attendees.length > 0 && (
             <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
               <Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -438,6 +645,18 @@ function EventRow({ event }: { event: CalendarEvent }) {
             </p>
           )}
         </div>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onEdit}
+          aria-label="Edit event"
+          title="Edit event"
+          className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100"
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
       </div>
     </li>
   );
@@ -454,7 +673,9 @@ function StatusLine({
     <p
       className={cn(
         "px-4 py-4 text-sm",
-        tone === "error" ? "text-destructive" : "text-muted-foreground",
+        tone === "error"
+          ? "text-destructive"
+          : "text-muted-foreground",
       )}
     >
       {children}

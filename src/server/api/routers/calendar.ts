@@ -14,7 +14,9 @@ function eventStartTimestamp(event: {
   };
 }): number {
   const start = event.data.start?.dateTime ?? event.data.start?.date;
+
   if (!start) return 0;
+
   return new Date(start).getTime();
 }
 
@@ -43,7 +45,10 @@ function mapEvent(event: {
     attendees:
       event.data.attendees
         ?.map((a) => {
-          if (a.displayName && a.email) return `${a.displayName} <${a.email}>`;
+          if (a.displayName && a.email) {
+            return `${a.displayName} <${a.email}>`;
+          }
+
           return a.email ?? a.displayName ?? "";
         })
         .filter(Boolean) ?? [],
@@ -57,12 +62,15 @@ function dedupeByEntityId<
   T extends { entity_id: string; updated_at: Date },
 >(items: T[]): T[] {
   const byEntityId = new Map<string, T>();
+
   for (const item of items) {
     const existing = byEntityId.get(item.entity_id);
+
     if (!existing || item.updated_at > existing.updated_at) {
       byEntityId.set(item.entity_id, item);
     }
   }
+
   return Array.from(byEntityId.values());
 }
 
@@ -77,8 +85,11 @@ function filterEventsByWeek<
       if (event.timestamp > 0) {
         return event.timestamp >= startMs && event.timestamp < endMs;
       }
+
       if (!event.start) return false;
+
       const ts = new Date(event.start).getTime();
+
       return ts >= startMs && ts < endMs;
     })
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -95,6 +106,7 @@ export const calendarRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const weekStart = new Date(input.weekStart);
       const weekEnd = new Date(input.weekEnd);
 
@@ -127,6 +139,7 @@ export const calendarRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const result = await tenant.googlecalendar.api.events.getMany({
         calendarId: "primary",
         timeMin: input.weekStart,
@@ -135,6 +148,7 @@ export const calendarRouter = createTRPCRouter({
         singleEvents: true,
         orderBy: "startTime",
       });
+
       return {
         synced: result.items?.length ?? 0,
       };
@@ -153,6 +167,7 @@ export const calendarRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "none",
@@ -161,11 +176,18 @@ export const calendarRouter = createTRPCRouter({
           description: input.description,
           location: input.location,
           status: "tentative",
-          start: { dateTime: input.start },
-          end: { dateTime: input.end },
-          attendees: input.attendees?.map((email) => ({ email })),
+          start: {
+            dateTime: input.start,
+          },
+          end: {
+            dateTime: input.end,
+          },
+          attendees: input.attendees?.map((email) => ({
+            email,
+          })),
         },
       });
+
       return {
         id: event.id ?? "",
         htmlLink: event.htmlLink ?? "",
@@ -185,6 +207,7 @@ export const calendarRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenant = await getTenant(ctx.session.user.id);
+
       const event = await tenant.googlecalendar.api.events.create({
         calendarId: "primary",
         sendUpdates: "all",
@@ -192,13 +215,61 @@ export const calendarRouter = createTRPCRouter({
           summary: input.summary,
           description: input.description,
           location: input.location,
-          start: { dateTime: input.start },
-          end: { dateTime: input.end },
-          attendees: input.attendees.map((email) => ({ email })),
+          start: {
+            dateTime: input.start,
+          },
+          end: {
+            dateTime: input.end,
+          },
+          attendees: input.attendees.map((email) => ({
+            email,
+          })),
         },
       });
+
       return {
         id: event.id ?? "",
+        htmlLink: event.htmlLink ?? "",
+      };
+    }),
+
+  updateEvent: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().min(1),
+        summary: z.string().min(1),
+        description: z.string().optional(),
+        location: z.string().optional(),
+        start: z.string().datetime(),
+        end: z.string().datetime(),
+        attendees: z.array(z.string().email()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const event = await tenant.googlecalendar.api.events.update({
+        calendarId: "primary",
+        id: input.id,
+        sendUpdates: "all",
+        event: {
+          summary: input.summary,
+          description: input.description,
+          location: input.location,
+          start: {
+            dateTime: input.start,
+          },
+          end: {
+            dateTime: input.end,
+          },
+          attendees: input.attendees?.map((email) => ({
+            email,
+          })),
+        },
+      });
+
+      return {
+        id: event.id ?? input.id,
         htmlLink: event.htmlLink ?? "",
       };
     }),
