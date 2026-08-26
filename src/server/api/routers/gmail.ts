@@ -274,4 +274,33 @@ export const gmailRouter = createTRPCRouter({
         threadId: message.threadId ?? "",
       };
     }),
+
+  replyToMessage: protectedProcedure
+    .input(
+      z.object({
+        threadId: z.string().min(1),
+        to: z.string().email(),
+        subject: z.string().min(1),
+        body: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const raw = encodeRawEmail({
+        to: input.to,
+        subject: input.subject,
+        body: input.body,
+      });
+
+      const message = await tenant.gmail.api.messages.send({
+        raw,
+        threadId: input.threadId,
+      });
+
+      return {
+        id: message.id ?? "",
+        threadId: message.threadId ?? input.threadId,
+      };
+    }),
 });

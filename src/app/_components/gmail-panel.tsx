@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, MailPlus, RefreshCw, Send } from "lucide-react";
+import {
+  ArrowLeft,
+  MailPlus,
+  RefreshCw,
+  Reply as ReplyIcon,
+  Send,
+} from "lucide-react";
 import DOMPurify from "dompurify";
 
 import { formatMessageDate, formatSender, LinkifiedText } from "@/lib/display";
@@ -27,6 +33,7 @@ export function GmailPanel({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
 
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
@@ -51,6 +58,7 @@ export function GmailPanel({
     { id: selectedId! },
     { enabled: !!selectedId },
   );
+
   const drafts = api.gmail.listDrafts.useQuery(
     {
       limit: 50,
@@ -88,6 +96,18 @@ export function GmailPanel({
     },
   });
 
+  const replyToMessage = api.gmail.replyToMessage.useMutation({
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+
+      setTo("");
+      setSubject("");
+      setBody("");
+      setReplyOpen(false);
+    },
+  });
+
   const sendDraft = api.gmail.sendDraft.useMutation({
     onSuccess: async () => {
       await utils.gmail.searchEmails.invalidate();
@@ -96,6 +116,22 @@ export function GmailPanel({
   });
 
   const canSubmitCompose = Boolean(to && subject && body);
+
+  const openReply = (email: {
+    from: string;
+    subject: string;
+  }) => {
+    setTo(email.from);
+
+    setSubject(
+      email.subject.toLowerCase().startsWith("re:")
+        ? email.subject
+        : `Re: ${email.subject}`,
+    );
+
+    setBody("");
+    setReplyOpen(true);
+  };
 
   return (
     <>
@@ -111,6 +147,7 @@ export function GmailPanel({
                     ? "Sent"
                     : "Drafts"}
             </h2>
+
             <p className="text-muted-foreground text-xs">
               {searchQuery ? `Results for "${searchQuery}"` : "Mail from Gmail"}
             </p>
@@ -130,10 +167,12 @@ export function GmailPanel({
                   refreshInbox.isPending && "animate-spin",
                 )}
               />
+
               <span className="hidden sm:inline">
                 {refreshInbox.isPending ? "Refreshing" : "Refresh"}
               </span>
             </Button>
+
             <Button
               type="button"
               size="sm"
@@ -150,6 +189,7 @@ export function GmailPanel({
             {refreshInbox.error && (
               <p className="text-destructive">{refreshInbox.error.message}</p>
             )}
+
             {refreshInbox.data && (
               <p className="text-muted-foreground">
                 {refreshInbox.data.synced} synced from Google
@@ -165,7 +205,9 @@ export function GmailPanel({
               selectedId && "hidden lg:block",
             )}
           >
-            {(view === "inbox" || view === "starred" || view === "sent") && (
+            {(view === "inbox" ||
+              view === "starred" ||
+              view === "sent") && (
               <MailList
                 emails={emails.data}
                 isLoading={emails.isLoading}
@@ -199,11 +241,13 @@ export function GmailPanel({
               error={selectedEmail.error?.message}
               onBack={() => setSelectedId(null)}
               view={view}
+              onReply={openReply}
             />
           </section>
         </div>
       </div>
 
+      {/* Compose */}
       <Sheet open={composeOpen} onOpenChange={setComposeOpen}>
         <SheetContent className="w-full sm:max-w-xl">
           <SheetHeader className="border-b">
@@ -217,12 +261,14 @@ export function GmailPanel({
               onChange={(e) => setTo(e.target.value)}
               placeholder="To"
             />
+
             <Input
               type="text"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Subject"
             />
+
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -246,6 +292,7 @@ export function GmailPanel({
             >
               {createDraft.isPending ? "Saving" : "Save draft"}
             </Button>
+
             <Button
               type="button"
               onClick={() => sendEmail.mutate({ to, subject, body })}
@@ -253,6 +300,70 @@ export function GmailPanel({
             >
               <Send className="h-3.5 w-3.5" />
               {sendEmail.isPending ? "Sending" : "Send"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* Reply */}
+      <Sheet open={replyOpen} onOpenChange={setReplyOpen}>
+        <SheetContent className="w-full sm:max-w-xl">
+          <SheetHeader className="border-b">
+            <SheetTitle>Reply</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex flex-1 flex-col gap-3 px-4">
+            <Input
+              type="email"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="To"
+            />
+
+            <Input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Subject"
+            />
+
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Write your reply..."
+              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-64 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
+            />
+
+            {replyToMessage.error && (
+              <p className="text-destructive text-sm">
+                {replyToMessage.error.message}
+              </p>
+            )}
+          </div>
+
+          <SheetFooter className="border-t sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              onClick={() => {
+                if (!selectedEmail.data?.threadId) return;
+
+                replyToMessage.mutate({
+                  threadId: selectedEmail.data.threadId,
+                  to,
+                  subject,
+                  body,
+                });
+              }}
+              disabled={
+                replyToMessage.isPending ||
+                !to ||
+                !subject ||
+                !body ||
+                !selectedEmail.data?.threadId
+              }
+            >
+              <Send className="h-3.5 w-3.5" />
+              {replyToMessage.isPending ? "Sending" : "Send Reply"}
             </Button>
           </SheetFooter>
         </SheetContent>
@@ -282,8 +393,13 @@ function MailList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  if (isLoading) return <StatusLine>Loading mail...</StatusLine>;
-  if (error) return <StatusLine tone="error">{error}</StatusLine>;
+  if (isLoading) {
+    return <StatusLine>Loading mail...</StatusLine>;
+  }
+
+  if (error) {
+    return <StatusLine tone="error">{error}</StatusLine>;
+  }
 
   if (!emails || emails.length === 0) {
     return (
@@ -311,15 +427,18 @@ function MailList({
               <span className="block truncate text-sm font-semibold">
                 {email.from ? formatSender(email.from) : "Unknown sender"}
               </span>
+
               <span className="mt-0.5 block truncate text-sm font-medium">
                 {email.subject || "(no subject)"}
               </span>
+
               {email.snippet && (
                 <span className="text-muted-foreground mt-0.5 block truncate text-xs">
                   {email.snippet}
                 </span>
               )}
             </span>
+
             {email.date && (
               <span className="text-muted-foreground shrink-0 pt-0.5 text-xs">
                 {formatMessageDate(email.date)}
@@ -351,8 +470,13 @@ function DraftList({
   isSending: boolean;
   onSend: (draftId: string) => void;
 }) {
-  if (isLoading) return <StatusLine>Loading drafts...</StatusLine>;
-  if (error) return <StatusLine tone="error">{error}</StatusLine>;
+  if (isLoading) {
+    return <StatusLine>Loading drafts...</StatusLine>;
+  }
+
+  if (error) {
+    return <StatusLine tone="error">{error}</StatusLine>;
+  }
 
   if (!drafts || drafts.length === 0) {
     return (
@@ -372,12 +496,14 @@ function DraftList({
         >
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">Draft {draft.id}</p>
+
             {draft.createdAt && (
               <p className="text-muted-foreground text-xs">
                 Saved {formatMessageDate(draft.createdAt)}
               </p>
             )}
           </div>
+
           <Button
             type="button"
             variant="outline"
@@ -400,10 +526,13 @@ function ReadingPane({
   error,
   onBack,
   view,
+  onReply,
 }: {
   selectedId: string | null;
   selectedEmail:
     | {
+        id: string;
+        threadId: string;
         subject: string;
         from: string;
         to: string;
@@ -417,12 +546,19 @@ function ReadingPane({
   error?: string;
   onBack: () => void;
   view: "inbox" | "starred" | "drafts" | "sent";
+  onReply: (email: {
+    from: string;
+    subject: string;
+  }) => void;
 }) {
   if (!selectedId) {
     return (
       <div className="flex h-full items-center justify-center px-8 text-center">
         <div>
-          <p className="font-heading text-sm font-semibold">Select a message</p>
+          <p className="font-heading text-sm font-semibold">
+            Select a message
+          </p>
+
           <p className="text-muted-foreground mt-1 text-sm">
             Your reading pane keeps the conversation in context.
           </p>
@@ -445,6 +581,7 @@ function ReadingPane({
       </Button>
 
       {isLoading && <StatusLine>Loading message...</StatusLine>}
+
       {error && <StatusLine tone="error">{error}</StatusLine>}
 
       {selectedEmail && (
@@ -456,16 +593,19 @@ function ReadingPane({
           <div className="text-muted-foreground mt-4 space-y-1 text-sm">
             <p>
               <span>From </span>
+
               <span className="text-foreground font-medium">
                 {formatSender(selectedEmail.from)}
               </span>
             </p>
+
             {selectedEmail.to && (
               <p>
                 <span>To </span>
                 {formatSender(selectedEmail.to)}
               </p>
             )}
+
             {selectedEmail.date && (
               <p>{formatMessageDate(selectedEmail.date)}</p>
             )}
@@ -476,6 +616,18 @@ function ReadingPane({
               body={selectedEmail.body || selectedEmail.snippet || "(empty)"}
               bodyMimeType={selectedEmail.bodyMimeType}
             />
+          </div>
+
+          <div className="mt-5 border-t pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onReply(selectedEmail)}
+            >
+              <ReplyIcon className="h-3.5 w-3.5" />
+              Reply
+            </Button>
           </div>
         </div>
       )}
