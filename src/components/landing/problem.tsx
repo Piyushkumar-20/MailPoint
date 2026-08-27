@@ -1,105 +1,110 @@
 import {
-  ArrowDown,
-  Bot,
   Calendar,
   CheckCircle2,
   Mail,
-  MailCheck,
-  Search,
-  Send,
-  UserPlus,
+  MousePointerClick,
+  Sparkles,
 } from "lucide-react";
 
 import { Reveal } from "@/components/landing/reveal";
 import { SectionHeading } from "@/components/landing/section-shell";
 
-const FRAGMENTED_STEPS = [
-  { icon: Mail, label: "Email arrives" },
-  { icon: Search, label: "Understand request" },
-  { icon: Calendar, label: "Open Calendar" },
-  { icon: Search, label: "Check availability" },
-  { icon: Calendar, label: "Create meeting" },
-  { icon: UserPlus, label: "Invite attendee" },
-  { icon: Mail, label: "Return to Email" },
-  { icon: Send, label: "Send confirmation" },
-];
-
-const UNIFIED_STEPS = [
-  { icon: Mail, label: "User intent" },
-  { icon: Bot, label: "AI" },
-  { icon: Calendar, label: "Gmail + Calendar" },
-  { icon: CheckCircle2, label: "Completed" },
-];
-
 export function Problem() {
   return (
-    <section className="relative bg-[#08080B] py-24 sm:py-32">
+    <section className="relative bg-[#FAFAF9] py-24 sm:py-32 dark:bg-[#08080B]">
       <div className="mx-auto max-w-5xl px-6">
         <SectionHeading
-          eyebrow="The problem"
-          title="The work doesn't happen inside one app."
-          description="A single request — schedule this, confirm that — routinely means eight small handoffs between your inbox and your calendar."
+          eyebrow="The daily tax"
+          title="Ten tabs to answer one email."
+          description="A meeting request means opening Gmail, opening Calendar, checking availability by eye, creating the event, then coming back to send a confirmation — by hand, every time."
         />
 
-        <div className="mt-16 grid gap-6 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
-          {/* fragmented */}
+        <div className="mt-16 grid gap-6 lg:grid-cols-2 lg:items-stretch">
+          {/* before: scattered apps */}
           <Reveal>
-            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6">
-              <p className="mb-5 font-mono text-[10px] tracking-[0.14em] text-zinc-500 uppercase">
+            <div className="flex h-full flex-col rounded-2xl border border-black/[0.08] bg-black/[0.015] p-6 dark:border-white/[0.06] dark:bg-white/[0.015]">
+              <p className="mb-5 text-[10px] tracking-[0.14em] text-zinc-500 uppercase">
                 Without MailPoint
               </p>
-              <div className="flex flex-col items-center">
-                {FRAGMENTED_STEPS.map((step, i) => (
-                  <div key={step.label} className="flex flex-col items-center">
-                    <div className="flex w-full max-w-[220px] items-center gap-2.5 rounded-lg border border-white/[0.06] bg-[#0E0E12] px-3 py-2">
-                      <step.icon className="size-3.5 shrink-0 text-zinc-500" />
-                      <span className="font-sans text-[12.5px] text-zinc-400">
-                        {step.label}
-                      </span>
+              <div className="relative flex flex-1 flex-col items-center justify-center gap-3 py-4">
+                {[
+                  { icon: Mail, name: "Gmail", note: "reading the request" },
+                  {
+                    icon: Calendar,
+                    name: "Google Calendar",
+                    note: "checking availability by eye",
+                  },
+                  {
+                    icon: MousePointerClick,
+                    name: "Back to Gmail",
+                    note: "typing the confirmation manually",
+                  },
+                ].map((app, i) => (
+                  <div
+                    key={app.name}
+                    className="flex w-full max-w-sm items-center gap-3 rounded-xl border border-black/[0.08] bg-white/70 px-4 py-3 opacity-90 grayscale-[35%] dark:border-white/[0.08] dark:bg-white/[0.03]"
+                    style={{ marginLeft: i % 2 === 0 ? 0 : "1.5rem" }}
+                  >
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-black/[0.05] dark:bg-white/[0.06]">
+                      <app.icon className="size-4 text-zinc-500" />
                     </div>
-                    {i < FRAGMENTED_STEPS.length - 1 ? (
-                      <ArrowDown className="my-1 size-3 text-zinc-700" />
-                    ) : null}
+                    <div className="min-w-0">
+                      <p className="truncate font-sans text-[12.5px] font-medium text-zinc-700 dark:text-zinc-300">
+                        {app.name}
+                      </p>
+                      <p className="truncate font-sans text-[11px] text-zinc-500">
+                        {app.note}
+                      </p>
+                    </div>
+                    <span className="ml-auto text-[9.5px] tracking-wide text-zinc-400 uppercase">
+                      tab {i + 1}
+                    </span>
                   </div>
                 ))}
               </div>
+              <p className="mt-2 text-center font-sans text-[12px] text-zinc-500">
+                Three separate apps, three separate contexts, one simple request.
+              </p>
             </div>
           </Reveal>
 
-          {/* transform arrow */}
-          <Reveal delay={100} className="flex justify-center lg:flex-col">
-            <div className="flex items-center gap-2 rounded-full border border-[#6E56CF]/25 bg-[#6E56CF]/[0.08] px-3 py-1.5 font-mono text-[10px] tracking-wide text-[#B4A4F0] uppercase lg:rotate-90">
-              becomes
-            </div>
-          </Reveal>
-
-          {/* unified */}
-          <Reveal delay={160}>
-            <div className="rounded-2xl border border-[#6E56CF]/25 bg-[#6E56CF]/[0.06] p-6">
-              <p className="mb-5 font-mono text-[10px] tracking-[0.14em] text-[#B4A4F0] uppercase">
+          {/* after: one unified panel */}
+          <Reveal delay={120}>
+            <div className="flex h-full flex-col rounded-2xl border border-teal-600/25 bg-teal-600/[0.04] p-6 dark:border-teal-400/20 dark:bg-teal-400/[0.04]">
+              <p className="mb-5 text-[10px] tracking-[0.14em] text-teal-700 uppercase dark:text-teal-300">
                 With MailPoint
               </p>
-              <div className="flex flex-col items-center">
-                {UNIFIED_STEPS.map((step, i) => (
-                  <div key={step.label} className="flex flex-col items-center">
-                    <div className="flex w-full max-w-[220px] items-center gap-2.5 rounded-lg border border-[#6E56CF]/30 bg-[#12101B] px-3 py-2.5">
-                      <step.icon className="size-4 shrink-0 text-[#B4A4F0]" />
-                      <span className="font-sans text-[13px] font-medium text-zinc-100">
-                        {step.label}
-                      </span>
-                    </div>
-                    {i < UNIFIED_STEPS.length - 1 ? (
-                      <ArrowDown className="my-1.5 size-3.5 text-[#6E56CF]/50" />
-                    ) : null}
+              <div className="flex flex-1 flex-col justify-center rounded-xl border border-black/[0.08] bg-white p-4 shadow-sm dark:border-white/[0.08] dark:bg-[#0E0E12]">
+                <div className="flex items-center gap-2 border-b border-black/[0.06] pb-3 dark:border-white/[0.06]">
+                  <Mail className="size-3.5 text-zinc-400" />
+                  <span className="font-sans text-[12px] text-zinc-500">
+                    Rahul Mehta — &ldquo;Can we meet tomorrow at 11?&rdquo;
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 py-3">
+                  <Sparkles className="size-3.5 text-teal-600 dark:text-teal-300" />
+                  <span className="font-sans text-[12px] text-zinc-700 dark:text-zinc-300">
+                    MailPoint checked your calendar and created the event.
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-teal-600/20 bg-teal-600/[0.06] px-3 py-2 dark:border-teal-400/20 dark:bg-teal-400/[0.06]">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="size-3.5 text-teal-700 dark:text-teal-300" />
+                    <span className="font-sans text-[12px] text-zinc-800 dark:text-zinc-200">
+                      Tomorrow, 11:00 AM
+                    </span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-[10px] tracking-wide text-emerald-700 uppercase dark:text-emerald-400">
+                      Confirmed
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="mt-5 flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
-                <MailCheck className="size-3.5 text-[#34D399]" />
-                <span className="font-sans text-[12px] text-zinc-400">
-                  One request, no app switching.
-                </span>
-              </div>
+              <p className="mt-4 text-center font-sans text-[12px] text-zinc-600 dark:text-zinc-400">
+                One panel, same request, nothing to switch between.
+              </p>
             </div>
           </Reveal>
         </div>

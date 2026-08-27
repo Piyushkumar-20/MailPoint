@@ -4,12 +4,13 @@ import * as React from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 
+import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "#product", label: "Product" },
   { href: "#how-it-works", label: "How it Works" },
-  { href: "#features", label: "Features" },
+  { href: "#capabilities", label: "Capabilities" },
   { href: "#technology", label: "Technology" },
 ];
 
@@ -35,15 +36,15 @@ export function LandingNavbar() {
         className={cn(
           "flex w-[min(100%,68rem)] items-center justify-between rounded-2xl border transition-all duration-300",
           scrolled
-            ? "mx-3 border-white/10 bg-[#0A0A0D]/80 px-4 py-2 shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset] backdrop-blur-md"
+            ? "mx-3 border-black/10 bg-white/80 px-4 py-2 shadow-[0_1px_0_0_rgba(0,0,0,0.02)_inset] backdrop-blur-md dark:border-white/10 dark:bg-[#0A0A0D]/80 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset]"
             : "mx-3 border-transparent bg-transparent px-4 py-3",
         )}
       >
         <Link href="#top" className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-[7px] bg-[#6E56CF] text-[11px] font-semibold text-white">
+          <span className="flex size-6 items-center justify-center rounded-[7px] bg-zinc-950 text-[11px] font-semibold text-white dark:bg-white dark:text-zinc-950">
             M
           </span>
-          <span className="font-heading text-[15px] font-semibold tracking-tight text-zinc-50">
+          <span className="font-heading text-[15px] font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
             MailPoint
           </span>
         </Link>
@@ -53,7 +54,7 @@ export function LandingNavbar() {
             <a
               key={link.href}
               href={link.href}
-              className="rounded-lg px-3 py-1.5 font-sans text-[13px] text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-100"
+              className="rounded-lg px-3 py-1.5 font-sans text-[13px] text-zinc-600 transition-colors hover:bg-black/[0.04] hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-zinc-100"
             >
               {link.label}
             </a>
@@ -61,52 +62,56 @@ export function LandingNavbar() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
+          <ModeToggle />
           <Link
             href="/login"
-            className="rounded-lg px-3 py-1.5 font-sans text-[13px] text-zinc-300 transition-colors hover:text-zinc-50"
+            className="rounded-lg px-3 py-1.5 font-sans text-[13px] text-zinc-700 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50"
           >
             Sign In
           </Link>
           <Link
             href="/register"
-            className="rounded-lg bg-zinc-50 px-3.5 py-1.5 font-sans text-[13px] font-medium text-zinc-950 transition-colors hover:bg-white"
+            className="rounded-lg bg-zinc-950 px-3.5 py-1.5 font-sans text-[13px] font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-white"
           >
             Get Started
           </Link>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex size-8 items-center justify-center rounded-lg text-zinc-300 md:hidden"
-          aria-label={open ? "Close menu" : "Open menu"}
-        >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
+        <div className="flex items-center gap-1 md:hidden">
+          <ModeToggle />
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex size-8 items-center justify-center rounded-lg text-zinc-700 dark:text-zinc-300"
+            aria-label={open ? "Close menu" : "Open menu"}
+          >
+            {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
+        </div>
       </nav>
 
       {open ? (
-        <div className="absolute inset-x-3 top-[calc(100%+0.5rem)] flex flex-col gap-1 rounded-2xl border border-white/10 bg-[#0A0A0D]/95 p-3 backdrop-blur-md md:hidden">
+        <div className="absolute inset-x-3 top-[calc(100%+0.5rem)] flex flex-col gap-1 rounded-2xl border border-black/10 bg-white/95 p-3 backdrop-blur-md md:hidden dark:border-white/10 dark:bg-[#0A0A0D]/95">
           {LINKS.map((link) => (
             <a
               key={link.href}
               href={link.href}
               onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2 font-sans text-sm text-zinc-300 hover:bg-white/5"
+              className="rounded-lg px-3 py-2 font-sans text-sm text-zinc-700 hover:bg-black/[0.04] dark:text-zinc-300 dark:hover:bg-white/5"
             >
               {link.label}
             </a>
           ))}
-          <div className="mt-1 flex flex-col gap-2 border-t border-white/10 pt-3">
+          <div className="mt-1 flex flex-col gap-2 border-t border-black/10 pt-3 dark:border-white/10">
             <Link
               href="/login"
-              className="rounded-lg px-3 py-2 text-center font-sans text-sm text-zinc-300 hover:bg-white/5"
+              className="rounded-lg px-3 py-2 text-center font-sans text-sm text-zinc-700 hover:bg-black/[0.04] dark:text-zinc-300 dark:hover:bg-white/5"
             >
               Sign In
             </Link>
             <Link
               href="/register"
-              className="rounded-lg bg-zinc-50 px-3 py-2 text-center font-sans text-sm font-medium text-zinc-950"
+              className="rounded-lg bg-zinc-950 px-3 py-2 text-center font-sans text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-950"
             >
               Get Started
             </Link>

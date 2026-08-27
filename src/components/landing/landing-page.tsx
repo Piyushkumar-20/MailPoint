@@ -7,6 +7,7 @@ import { LandingFooter } from "@/components/landing/footer";
 import { Hero } from "@/components/landing/hero";
 import { KeyboardSection } from "@/components/landing/keyboard-section";
 import { LandingNavbar } from "@/components/landing/navbar";
+import { Philosophy } from "@/components/landing/philosophy";
 import { Problem } from "@/components/landing/problem";
 import { RealtimeSection } from "@/components/landing/realtime-section";
 import { SearchSection } from "@/components/landing/search-section";
@@ -14,7 +15,7 @@ import { Security } from "@/components/landing/security";
 
 export function LandingPage() {
   return (
-    <div className="bg-[#08080B]">
+    <div className="bg-[#FAFAF9] dark:bg-[#08080B]">
       <LandingNavbar />
       <main>
         <Hero />
@@ -26,6 +27,7 @@ export function LandingPage() {
         <RealtimeSection />
         <KeyboardSection />
         <Architecture />
+        <Philosophy />
         <Security />
         <FinalCta />
       </main>

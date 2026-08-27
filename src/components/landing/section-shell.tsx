@@ -17,18 +17,25 @@ export function SectionHeading({
     <div
       className={cn(
         "flex flex-col gap-4",
-        align === "center" ? "items-center text-center" : "items-start text-left",
+        align === "center"
+          ? "items-center text-center"
+          : "items-start text-left",
         className,
       )}
     >
-      <span className="font-mono text-[11px] font-medium tracking-[0.16em] text-[#B4A4F0] uppercase">
+      <span className="text-[11px] font-medium tracking-[0.16em] text-teal-700 uppercase dark:text-teal-300">
         {eyebrow}
       </span>
-      <h2 className="font-heading max-w-2xl text-3xl leading-[1.1] font-semibold tracking-tight text-zinc-50 sm:text-4xl">
+      <h2 className="font-heading max-w-2xl text-3xl leading-[1.1] font-semibold tracking-tight text-zinc-950 sm:text-4xl dark:text-zinc-50">
         {title}
       </h2>
       {description ? (
-        <p className="max-w-xl font-sans text-[15px] leading-relaxed text-zinc-400">
+        <p
+          className={cn(
+            "max-w-xl font-sans text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400",
+            align === "center" ? "mx-auto" : "",
+          )}
+        >
           {description}
         </p>
       ) : null}
@@ -43,8 +50,9 @@ export function GridBackdrop({ className }: { className?: string }) {
       aria-hidden
       className={cn(
         "pointer-events-none absolute inset-0 -z-10",
-        "[background-image:linear-gradient(to_right,color-mix(in_oklch,white,transparent_95%)_1px,transparent_1px),linear-gradient(to_bottom,color-mix(in_oklch,white,transparent_95%)_1px,transparent_1px)]",
+        "[background-image:linear-gradient(to_right,color-mix(in_oklch,currentColor,transparent_95%)_1px,transparent_1px),linear-gradient(to_bottom,color-mix(in_oklch,currentColor,transparent_95%)_1px,transparent_1px)]",
         "[background-size:44px_44px]",
+        "text-zinc-950 dark:text-white",
         "[mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black_40%,transparent_100%)]",
         className,
       )}
@@ -52,9 +60,9 @@ export function GridBackdrop({ className }: { className?: string }) {
   );
 }
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
+export function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <span className="font-mono text-[10px] font-medium tracking-[0.14em] text-zinc-500 uppercase">
+    <span className="text-[11px] font-medium tracking-[0.16em] text-teal-700 uppercase dark:text-teal-300">
       {children}
     </span>
   );

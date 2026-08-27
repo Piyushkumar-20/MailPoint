@@ -28,7 +28,7 @@ const POINTS = [
 
 export function Security() {
   return (
-    <section className="relative bg-[#08080B] py-24 sm:py-32">
+    <section className="relative bg-[#FAFAF9] py-24 sm:py-32 dark:bg-[#08080B]">
       <div className="mx-auto max-w-4xl px-6">
         <SectionHeading
           eyebrow="Security"
@@ -36,14 +36,14 @@ export function Security() {
         />
 
         <Reveal className="mt-14">
-          <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] sm:grid-cols-2">
+          <div className="grid gap-px overflow-hidden rounded-2xl border border-black/10 bg-black/[0.06] sm:grid-cols-2 dark:border-white/10 dark:bg-white/[0.06]">
             {POINTS.map((point) => (
-              <div key={point.title} className="bg-[#0B0B0F] p-6">
-                <point.icon className="size-4 text-[#B4A4F0]" />
-                <p className="mt-3 font-heading text-[14px] font-semibold text-zinc-100">
+              <div key={point.title} className="bg-white p-6 dark:bg-[#0B0B0F]">
+                <point.icon className="size-4 text-teal-700 dark:text-teal-300" />
+                <p className="font-heading mt-3 text-[14px] font-semibold text-zinc-950 dark:text-zinc-50">
                   {point.title}
                 </p>
-                <p className="mt-1.5 font-sans text-[13px] leading-relaxed text-zinc-500">
+                <p className="mt-1.5 font-sans text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-500">
                   {point.description}
                 </p>
               </div>
