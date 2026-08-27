@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignLeft,
   ArrowLeft,
@@ -1071,7 +1071,7 @@ function RecipientField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="name@example.com"
-        className="h-7 border-0 bg-transparent! px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+        className="composer-input"
       />
 
       <div className="flex items-center gap-1">
@@ -1119,7 +1119,7 @@ function ComposerAddressField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-7 border-0 bg-transparent! px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+        className="composer-input"
       />
     </label>
   );
@@ -1138,7 +1138,7 @@ function SubjectField({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Subject"
-      className="h-7 border-0 bg-transparent! px-0 font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+      className="composer-input font-medium"
     />
   );
 }
@@ -1204,8 +1204,39 @@ function ComposerToolbar({
   emojiOpen: boolean;
   onEmojiOpenChange: (open: boolean) => void;
 }) {
+  const [activeFormats, setActiveFormats] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+    orderedList: false,
+    unorderedList: false,
+    quote: false,
+  });
+
+  const updateActiveFormats = useCallback(() => {
+    setActiveFormats({
+      bold: document.queryCommandState("bold"),
+      italic: document.queryCommandState("italic"),
+      underline: document.queryCommandState("underline"),
+      orderedList: document.queryCommandState("insertOrderedList"),
+      unorderedList: document.queryCommandState("insertUnorderedList"),
+      quote:
+        String(document.queryCommandValue("formatBlock")).toLowerCase() ===
+        "blockquote",
+    });
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", updateActiveFormats);
+
+    return () => {
+      document.removeEventListener("selectionchange", updateActiveFormats);
+    };
+  }, [updateActiveFormats]);
+
   const applyFormat = (command: string, value?: string) => {
     document.execCommand(command, false, value);
+    window.requestAnimationFrame(updateActiveFormats);
   };
 
   const insertEmoji = (emoji: string) => {
@@ -1240,32 +1271,44 @@ function ComposerToolbar({
 
         <div className="bg-border mx-1 h-5 w-px" />
 
-        <ToolbarButton label="Bold" onClick={() => applyFormat("bold")}>
+        <ToolbarButton
+          label="Bold"
+          active={activeFormats.bold}
+          onClick={() => applyFormat("bold")}
+        >
           <Bold className="h-3.5 w-3.5" />
         </ToolbarButton>
-        <ToolbarButton label="Italic" onClick={() => applyFormat("italic")}>
+        <ToolbarButton
+          label="Italic"
+          active={activeFormats.italic}
+          onClick={() => applyFormat("italic")}
+        >
           <Italic className="h-3.5 w-3.5" />
         </ToolbarButton>
         <ToolbarButton
           label="Underline"
+          active={activeFormats.underline}
           onClick={() => applyFormat("underline")}
         >
           <Underline className="h-3.5 w-3.5" />
         </ToolbarButton>
         <ToolbarButton
           label="Numbered list"
+          active={activeFormats.orderedList}
           onClick={() => applyFormat("insertOrderedList")}
         >
           <ListOrdered className="h-3.5 w-3.5" />
         </ToolbarButton>
         <ToolbarButton
           label="Bulleted list"
+          active={activeFormats.unorderedList}
           onClick={() => applyFormat("insertUnorderedList")}
         >
           <List className="h-3.5 w-3.5" />
         </ToolbarButton>
         <ToolbarButton
           label="Quote"
+          active={activeFormats.quote}
           onClick={() => applyFormat("formatBlock", "blockquote")}
         >
           <Quote className="h-3.5 w-3.5" />
@@ -1341,15 +1384,22 @@ function ToolbarButton({
   label,
   onClick,
   disabled,
+  active,
   children,
 }: {
   label: string;
   onClick?: () => void;
   disabled?: boolean;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <IconButton label={label} onClick={onClick} disabled={disabled}>
+    <IconButton
+      label={label}
+      onClick={onClick}
+      disabled={disabled}
+      active={active}
+    >
       {children}
     </IconButton>
   );
@@ -1359,11 +1409,13 @@ function IconButton({
   label,
   onClick,
   disabled,
+  active,
   children,
 }: {
   label: string;
   onClick?: () => void;
   disabled?: boolean;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1373,8 +1425,13 @@ function IconButton({
       onMouseDown={(event) => event.preventDefault()}
       disabled={disabled}
       aria-label={label}
+      aria-pressed={active}
       title={label}
-      className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+      className={cn(
+        "text-muted-foreground hover:bg-muted hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md border border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent",
+        active &&
+          "border-primary/25 bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary",
+      )}
     >
       {children}
     </button>

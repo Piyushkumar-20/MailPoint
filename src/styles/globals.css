@@ -171,3 +171,36 @@
     font: inherit;
   }
 }
+
+@layer components {
+  .composer-input {
+    height: 1.75rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    padding-inline: 0;
+    color: var(--foreground);
+    box-shadow: none;
+  }
+
+  .composer-input:focus,
+  .composer-input:focus-visible {
+    border-color: transparent;
+    background: transparent !important;
+    box-shadow: none;
+    outline: none;
+  }
+
+  .composer-input::placeholder {
+    color: var(--muted-foreground);
+  }
+
+  .composer-input:-webkit-autofill,
+  .composer-input:-webkit-autofill:hover,
+  .composer-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--foreground);
+    caret-color: var(--foreground);
+    box-shadow: 0 0 0 1000px var(--popover) inset;
+    transition: background-color 999999s ease-in-out 0s;
+  }
+}
