@@ -1,11 +1,23 @@
 import { z } from "zod";
 
 import { getTenant } from "@/server/lib/tenant";
+import {
+  calculateAvailability,
+  type AvailabilityResult,
+} from "@/server/lib/calendar-availability";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 
 const paginationSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
   offset: z.number().min(0).default(0),
+});
+
+const availabilityInputSchema = z.object({
+  timeMin: z.string().datetime(),
+  timeMax: z.string().datetime(),
+  timeZone: z.string().optional(),
+  durationMinutes: z.number().int().min(1).max(1440),
+  calendarIds: z.array(z.string().min(1)).min(1),
 });
 
 function eventStartTimestamp(event: {
@@ -154,6 +166,30 @@ export const calendarRouter = createTRPCRouter({
       return {
         synced: result.items?.length ?? 0,
       };
+    }),
+
+  getAvailability: protectedProcedure
+    .input(availabilityInputSchema)
+    .query(async ({ ctx, input }): Promise<AvailabilityResult> => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const response =
+        await tenant.googlecalendar.api.calendar.getAvailability({
+          timeMin: input.timeMin,
+          timeMax: input.timeMax,
+          timeZone: input.timeZone,
+          items: input.calendarIds.map((id) => ({
+            id,
+          })),
+        });
+
+      return calculateAvailability({
+        response,
+        calendarIds: input.calendarIds,
+        timeMin: input.timeMin,
+        timeMax: input.timeMax,
+        durationMinutes: input.durationMinutes,
+      });
     }),
 
   createDraft: protectedProcedure

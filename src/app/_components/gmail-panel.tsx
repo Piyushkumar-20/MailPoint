@@ -5,6 +5,11 @@ import {
   AlignLeft,
   ArrowLeft,
   Bold,
+  CalendarDays,
+  Check,
+  Clock3,
+  Loader2,
+  Users,
   Eraser,
   Italic,
   Link,
@@ -36,6 +41,57 @@ import { Input } from "@/components/ui/input";
 
 type ComposerMode = "compose" | "reply" | "forward";
 
+type MeetingSlot = { start: string; end: string };
+
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+const MEETING_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2);
+  const minutes = index % 2 === 0 ? "00" : "30";
+  const value = `${String(hours).padStart(2, "0")}:${minutes}`;
+  const hour12 = hours % 12 || 12;
+  const period = hours >= 12 ? "PM" : "AM";
+
+  return {
+    value,
+    label: `${hour12}:${minutes} ${period}`,
+  };
+});
+
+function getLocalDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function extractEmails(value: string | undefined) {
+  if (!value) return [];
+  return value.match(EMAIL_PATTERN) ?? [];
+}
+
+function getMeetingAttendeeCandidates(
+  email: { from: string; to: string },
+  view: "inbox" | "starred" | "drafts" | "sent",
+) {
+  const orderedSources =
+    view === "sent"
+      ? [email.to, email.from]
+      : [email.from, email.to];
+
+  return Array.from(
+    new Set(orderedSources.flatMap((source) => extractEmails(source))),
+  );
+}
+
+function formatMeetingTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(value));
+}
+
 export function GmailPanel({
   view,
   searchQuery,
@@ -49,6 +105,15 @@ export function GmailPanel({
   const [composerMinimized, setComposerMinimized] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
 
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [meetingDuration, setMeetingDuration] = useState(30);
+  const [meetingDate, setMeetingDate] = useState(() => getLocalDateValue());
+  const [meetingStartTime, setMeetingStartTime] = useState("09:00");
+  const [meetingEndTime, setMeetingEndTime] = useState("18:00");
+  const [scheduleAttendee, setScheduleAttendee] = useState("");
+  const [hasSearchedAvailability, setHasSearchedAvailability] = useState(false);
+  const [selectedMeetingSlot, setSelectedMeetingSlot] = useState<MeetingSlot | null>(null);
+
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
@@ -56,6 +121,49 @@ export function GmailPanel({
   const [body, setBody] = useState("");
 
   const utils = api.useUtils();
+
+  const selectedEmail = api.gmail.getMessage.useQuery(
+    { id: selectedId! },
+    { enabled: !!selectedId },
+  );
+
+  const attendeeCandidates = useMemo(() => {
+    if (!selectedEmail.data) return [];
+
+    return getMeetingAttendeeCandidates(
+      {
+        from: selectedEmail.data.from,
+        to: selectedEmail.data.to,
+      },
+      view,
+    );
+  }, [selectedEmail.data, view]);
+
+  const availabilityQuery = api.calendar.getAvailability.useQuery(
+    {
+      timeMin: new Date(`${meetingDate}T${meetingStartTime}:00`).toISOString(),
+      timeMax: new Date(`${meetingDate}T${meetingEndTime}:00`).toISOString(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      durationMinutes: meetingDuration,
+      calendarIds: ["primary", ...(scheduleAttendee ? [scheduleAttendee] : [])],
+    },
+    {
+      enabled:
+        scheduleOpen &&
+        hasSearchedAvailability &&
+        Boolean(scheduleAttendee) &&
+        meetingStartTime < meetingEndTime,
+      staleTime: 0,
+    },
+  );
+
+  const sendMeetingInvite = api.calendar.sendInvite.useMutation({
+    onSuccess: () => {
+      setSelectedMeetingSlot(null);
+      setScheduleOpen(false);
+      void utils.calendar.searchEvents.invalidate();
+    },
+  });
 
   const mailbox =
     view === "starred" ? "starred" : view === "sent" ? "sent" : "inbox";
@@ -70,11 +178,6 @@ export function GmailPanel({
     {
       enabled: view === "inbox" || view === "starred" || view === "sent",
     },
-  );
-
-  const selectedEmail = api.gmail.getMessage.useQuery(
-    { id: selectedId! },
-    { enabled: !!selectedId },
   );
 
   const drafts = api.gmail.listDrafts.useQuery(
@@ -310,6 +413,60 @@ export function GmailPanel({
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
 
+  const openScheduleMeeting = () => {
+    if (!selectedEmail.data) return;
+
+    const candidates = getMeetingAttendeeCandidates(
+      {
+        from: selectedEmail.data.from,
+        to: selectedEmail.data.to,
+      },
+      view,
+    );
+
+    setScheduleAttendee(candidates[0] ?? "");
+    setMeetingDate(getLocalDateValue());
+    setMeetingStartTime("09:00");
+    setMeetingEndTime("18:00");
+    setMeetingDuration(30);
+    setSelectedMeetingSlot(null);
+    setHasSearchedAvailability(false);
+    setScheduleOpen(true);
+  };
+
+  const createScheduledMeeting = () => {
+    if (!selectedMeetingSlot || !selectedEmail.data || !scheduleAttendee) return;
+
+    const start = new Date(selectedMeetingSlot.start);
+    const end = new Date(selectedMeetingSlot.end);
+    const requestedStart = new Date(`${meetingDate}T${meetingStartTime}:00`);
+    const requestedEnd = new Date(`${meetingDate}T${meetingEndTime}:00`);
+    const expectedDurationMs = meetingDuration * 60 * 1000;
+
+    const isValidSelectedSlot =
+      !Number.isNaN(start.getTime()) &&
+      !Number.isNaN(end.getTime()) &&
+      start < end &&
+      getLocalDateValue(start) === meetingDate &&
+      start >= requestedStart &&
+      end <= requestedEnd &&
+      end.getTime() - start.getTime() === expectedDurationMs;
+
+    if (!isValidSelectedSlot) {
+      setSelectedMeetingSlot(null);
+      setHasSearchedAvailability(false);
+      return;
+    }
+
+    sendMeetingInvite.mutate({
+      summary: selectedEmail.data.subject || "Meeting",
+      description: `Scheduled from email conversation.\n\nOriginal email subject: ${selectedEmail.data.subject || "(no subject)"}`,
+      start: selectedMeetingSlot.start,
+      end: selectedMeetingSlot.end,
+      attendees: [scheduleAttendee],
+    });
+  };
+
   const toggleStar = () => {
     if (!selectedEmail.data?.id || modifyMessageLabels.isPending) {
       return;
@@ -406,6 +563,7 @@ export function GmailPanel({
               view={view}
               onReply={openReply}
               onForward={openForward}
+              onScheduleMeeting={() => setScheduleOpen(true)}
               isStarred={isStarred}
               isStarPending={modifyMessageLabels.isPending}
               onToggleStar={toggleStar}
@@ -439,6 +597,33 @@ export function GmailPanel({
           )}
         </div>
       </div>
+
+      {scheduleOpen && (
+        <ScheduleMeetingDialog
+          attendee={scheduleAttendee}
+          attendeeCandidates={attendeeCandidates}
+          subject={selectedEmail.data?.subject ?? ""}
+          duration={meetingDuration}
+          date={meetingDate}
+          startTime={meetingStartTime}
+          endTime={meetingEndTime}
+          selectedSlot={selectedMeetingSlot}
+          availability={availabilityQuery.data}
+          isLoadingAvailability={availabilityQuery.isLoading}
+          availabilityError={availabilityQuery.error?.message}
+          isSending={sendMeetingInvite.isPending}
+          sendError={sendMeetingInvite.error?.message}
+          onAttendeeChange={(value) => { setScheduleAttendee(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onDurationChange={(value) => { setMeetingDuration(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onDateChange={(value) => { setMeetingDate(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onStartTimeChange={(value) => { setMeetingStartTime(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onEndTimeChange={(value) => { setMeetingEndTime(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onSelectSlot={setSelectedMeetingSlot}
+          onFindAvailability={() => { setSelectedMeetingSlot(null); setHasSearchedAvailability(true); void availabilityQuery.refetch(); }}
+          onCreateMeeting={createScheduledMeeting}
+          onClose={() => { setSelectedMeetingSlot(null); setHasSearchedAvailability(false); setScheduleOpen(false); }}
+        />
+      )}
 
       {composerMode && (
         <EmailComposer
@@ -714,6 +899,7 @@ function FullEmailView({
   view,
   onReply,
   onForward,
+  onScheduleMeeting,
   isStarred,
   isStarPending,
   onToggleStar,
@@ -743,6 +929,7 @@ function FullEmailView({
     subject: string;
     body: string;
   }) => void;
+  onScheduleMeeting: () => void;
   isStarred: boolean;
   isStarPending: boolean;
   onToggleStar: () => void;
@@ -834,10 +1021,115 @@ function FullEmailView({
               <ForwardIcon className="h-3.5 w-3.5" />
               Forward
             </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onScheduleMeeting}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Schedule meeting
+            </Button>
           </div>
         </div>
       )}
     </article>
+  );
+}
+
+function ScheduleMeetingDialog({
+  attendee,
+  attendeeCandidates,
+  subject,
+  duration,
+  date,
+  startTime,
+  endTime,
+  selectedSlot,
+  availability,
+  isLoadingAvailability,
+  availabilityError,
+  isSending,
+  sendError,
+  onAttendeeChange,
+  onDurationChange,
+  onDateChange,
+  onStartTimeChange,
+  onEndTimeChange,
+  onSelectSlot,
+  onFindAvailability,
+  onCreateMeeting,
+  onClose,
+}: {
+  attendee: string; attendeeCandidates: string[]; subject: string; duration: number; date: string; startTime: string; endTime: string;
+  selectedSlot: { start: string; end: string } | null;
+  availability?: { attendeeAvailability: "available" | "partial" | "unknown"; slots: { start: string; end: string }[]; warnings: string[] };
+  isLoadingAvailability: boolean; availabilityError?: string; isSending: boolean; sendError?: string;
+  onAttendeeChange: (value: string) => void;
+  onDurationChange: (value: number) => void; onDateChange: (value: string) => void;
+  onStartTimeChange: (value: string) => void; onEndTimeChange: (value: string) => void;
+  onSelectSlot: (slot: { start: string; end: string }) => void; onFindAvailability: () => void;
+  onCreateMeeting: () => void; onClose: () => void;
+}) {
+  const canSearch = Boolean(attendee) && Boolean(date) && startTime < endTime && !isLoadingAvailability;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Schedule meeting" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="bg-card text-card-foreground flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+          <div><div className="flex items-center gap-2"><div className="bg-primary/10 text-primary flex h-9 w-9 items-center justify-center rounded-lg"><CalendarDays className="h-4 w-4" /></div><div><h2 className="text-base font-semibold">Schedule meeting</h2><p className="text-muted-foreground max-w-md truncate text-xs">{subject || "Meeting from email"}</p></div></div></div>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>×</Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="space-y-5">
+            <div className="bg-muted/35 rounded-lg border p-4">
+              <div className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4" />Attendee</div>
+              {attendeeCandidates.length > 1 ? (
+                <select
+                  value={attendee}
+                  onChange={(event) => onAttendeeChange(event.target.value)}
+                  className="border-input bg-background mt-2 h-9 w-full rounded-md border px-3 text-sm outline-none"
+                >
+                  {attendeeCandidates.map((candidate) => (
+                    <option key={candidate} value={candidate}>{candidate}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-muted-foreground mt-1 text-sm">{attendee || "No attendee detected"}</p>
+              )}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5"><span className="text-sm font-medium">Duration</span><select value={duration} onChange={(e) => onDurationChange(Number(e.target.value))} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none"><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>60 minutes</option></select></label>
+              <label className="space-y-1.5"><span className="text-sm font-medium">Date</span><Input type="date" value={date} onChange={(e) => onDateChange(e.target.value)} className="composer-input" /></label>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">From</span>
+                <select value={startTime} onChange={(e) => onStartTimeChange(e.target.value)} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none">
+                  {MEETING_TIME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">Until</span>
+                <select value={endTime} onChange={(e) => onEndTimeChange(e.target.value)} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none">
+                  {MEETING_TIME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            </div>
+            {!attendee && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">We couldn't find an email address in this message to use as the attendee.</p>}
+            {startTime >= endTime && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">The end time must be later than the start time.</p>}
+            <div className="flex justify-end"><Button type="button" onClick={onFindAvailability} disabled={!canSearch}>{isLoadingAvailability ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking calendars</> : <><Clock3 className="h-3.5 w-3.5" />Find available times</>}</Button></div>
+            {availabilityError && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{availabilityError}</p>}
+            {availability && <div className="space-y-3"><div><h3 className="text-sm font-semibold">Available times</h3><p className="text-muted-foreground mt-0.5 text-xs">{availability.attendeeAvailability === "unknown" ? "Only your calendar could be checked." : "These times are free on both calendars."}</p></div>
+              {availability.warnings.map((warning) => <div key={warning} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">{warning}</div>)}
+              {availability.slots.length > 0 ? <div className="grid gap-2 sm:grid-cols-2">{availability.slots.map((slot) => { const isSelected = selectedSlot?.start === slot.start && selectedSlot?.end === slot.end; return <button key={`${slot.start}-${slot.end}`} type="button" onClick={() => onSelectSlot(slot)} className={cn("flex items-center justify-between rounded-lg border px-3 py-3 text-left text-sm transition-colors", isSelected ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted/60")}>{formatMeetingTime(slot.start)} – {formatMeetingTime(slot.end)}{isSelected && <Check className="h-4 w-4" />}</button>; })}</div> : <div className="rounded-lg border border-dashed px-4 py-8 text-center"><p className="text-sm font-medium">No matching time slots</p><p className="text-muted-foreground mt-1 text-xs">Try a wider time window or a different date.</p></div>}
+            </div>}
+            {sendError && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{sendError}</p>}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="button" onClick={onCreateMeeting} disabled={!selectedSlot || isSending}>{isSending ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Sending invite</> : <><CalendarDays className="h-3.5 w-3.5" />Create & send invite</>}</Button></div>
+      </section>
+    </div>
   );
 }
 
