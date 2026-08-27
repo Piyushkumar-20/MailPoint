@@ -15,6 +15,8 @@ const paginationSchema = z.object({
   offset: z.number().min(0).default(0),
 });
 
+const optionalRecipientListSchema = z.string().trim().optional();
+
 function messageTimestamp(
   internalDate?: string | null,
   createdAt?: Date | null,
@@ -22,41 +24,6 @@ function messageTimestamp(
   if (internalDate) return Number(internalDate);
   if (createdAt) return createdAt.getTime();
   return 0;
-}
-
-function mapMessage(message: {
-  entity_id: string;
-  data: {
-    threadId?: string;
-    snippet?: string;
-    subject?: string;
-    from?: string;
-    to?: string;
-    body?: string;
-    bodyMimeType?: "text/plain" | "text/html";
-    internalDate?: string;
-    createdAt?: Date | null;
-  };
-}) {
-  return {
-    id: message.entity_id,
-    threadId: message.data.threadId ?? "",
-    snippet: message.data.snippet ?? "",
-    subject: message.data.subject ?? "",
-    from: message.data.from ?? "",
-    to: message.data.to ?? "",
-    date: message.data.internalDate ?? null,
-    timestamp: messageTimestamp(
-      message.data.internalDate,
-      message.data.createdAt,
-    ),
-  };
-}
-
-function sortMessagesNewestFirst<T extends { timestamp: number }>(
-  messages: T[],
-): T[] {
-  return [...messages].sort((a, b) => b.timestamp - a.timestamp);
 }
 
 function dedupeByEntityId<T extends { entity_id: string; updated_at: Date }>(
@@ -193,7 +160,9 @@ export const gmailRouter = createTRPCRouter({
       const headers = message.payload?.headers;
       const extractedBody = extractBodyFromPayload(message.payload);
 
-      const body = extractedBody.body || message.snippet || "";
+      const body = extractedBody.body
+        ? extractedBody.body
+        : (message.snippet ?? "");
 
       const bodyMimeType =
         extractedBody.body || !body
@@ -251,6 +220,8 @@ export const gmailRouter = createTRPCRouter({
     .input(
       z.object({
         to: z.string().email(),
+        cc: optionalRecipientListSchema,
+        bcc: optionalRecipientListSchema,
         subject: z.string().min(1),
         body: z.string().min(1),
       }),
@@ -329,6 +300,8 @@ export const gmailRouter = createTRPCRouter({
     .input(
       z.object({
         to: z.string().email(),
+        cc: optionalRecipientListSchema,
+        bcc: optionalRecipientListSchema,
         subject: z.string().min(1),
         body: z.string().min(1),
       }),
@@ -353,6 +326,8 @@ export const gmailRouter = createTRPCRouter({
       z.object({
         threadId: z.string().min(1),
         to: z.string().email(),
+        cc: optionalRecipientListSchema,
+        bcc: optionalRecipientListSchema,
         subject: z.string().min(1),
         body: z.string().min(1),
       }),
@@ -362,6 +337,8 @@ export const gmailRouter = createTRPCRouter({
 
       const raw = encodeRawEmail({
         to: input.to,
+        cc: input.cc,
+        bcc: input.bcc,
         subject: input.subject,
         body: input.body,
       });

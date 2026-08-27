@@ -1,15 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignLeft,
   ArrowLeft,
+  Bold,
+  Eraser,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
+  Maximize2,
+  Minimize2,
+  Paperclip,
+  Quote,
   Forward as ForwardIcon,
+  Image as ImageIcon,
   MailPlus,
   RefreshCw,
   Reply as ReplyIcon,
   Send,
+  Smile,
   Star,
   Trash2,
+  Underline,
+  X,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 
@@ -18,13 +33,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+
+type ComposerMode = "compose" | "reply" | "forward";
 
 export function GmailPanel({
   view,
@@ -35,11 +45,13 @@ export function GmailPanel({
   searchQuery: string;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [replyOpen, setReplyOpen] = useState(false);
-  const [forwardOpen, setForwardOpen] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode | null>(null);
+  const [composerMinimized, setComposerMinimized] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
 
   const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
@@ -87,9 +99,11 @@ export function GmailPanel({
       await utils.gmail.listDrafts.invalidate();
 
       setTo("");
+      setCc("");
+      setBcc("");
       setSubject("");
       setBody("");
-      setComposeOpen(false);
+      closeComposer();
     },
   });
 
@@ -98,11 +112,12 @@ export function GmailPanel({
       await utils.gmail.searchEmails.invalidate();
 
       setTo("");
+      setCc("");
+      setBcc("");
       setSubject("");
       setBody("");
 
-      setComposeOpen(false);
-      setForwardOpen(false);
+      closeComposer();
     },
   });
 
@@ -112,9 +127,11 @@ export function GmailPanel({
       await utils.gmail.getMessage.invalidate();
 
       setTo("");
+      setCc("");
+      setBcc("");
       setSubject("");
       setBody("");
-      setReplyOpen(false);
+      closeComposer();
     },
   });
 
@@ -221,8 +238,34 @@ export function GmailPanel({
 
   const canSubmitCompose = Boolean(to && subject && body);
 
+  const openComposer = (mode: ComposerMode) => {
+    setComposerMode(mode);
+    setComposerMinimized(false);
+  };
+
+  const closeComposer = () => {
+    setComposerMode(null);
+    setComposerMinimized(false);
+    setComposerExpanded(false);
+  };
+
+  const resetComposer = () => {
+    setTo("");
+    setCc("");
+    setBcc("");
+    setSubject("");
+    setBody("");
+  };
+
+  const discardComposer = () => {
+    resetComposer();
+    closeComposer();
+  };
+
   const openReply = (email: { from: string; subject: string }) => {
     setTo(email.from);
+    setCc("");
+    setBcc("");
 
     setSubject(
       email.subject.toLowerCase().startsWith("re:")
@@ -231,7 +274,7 @@ export function GmailPanel({
     );
 
     setBody("");
-    setReplyOpen(true);
+    openComposer("reply");
   };
 
   const openForward = (email: {
@@ -241,6 +284,8 @@ export function GmailPanel({
     body: string;
   }) => {
     setTo("");
+    setCc("");
+    setBcc("");
 
     setSubject(
       email.subject.toLowerCase().startsWith("fwd:")
@@ -260,7 +305,7 @@ export function GmailPanel({
     ].join("\n");
 
     setBody(forwardedMessage);
-    setForwardOpen(true);
+    openComposer("forward");
   };
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
@@ -326,7 +371,10 @@ export function GmailPanel({
             <Button
               type="button"
               size="sm"
-              onClick={() => setComposeOpen(true)}
+              onClick={() => {
+                resetComposer();
+                openComposer("compose");
+              }}
             >
               <MailPlus className="h-3.5 w-3.5" />
               Compose
@@ -334,7 +382,7 @@ export function GmailPanel({
           </div>
         </div>
 
-        {(refreshInbox.error || refreshInbox.data) && (
+        {(refreshInbox.error ?? refreshInbox.data) && (
           <div className="border-b px-4 py-2 text-xs">
             {refreshInbox.error && (
               <p className="text-destructive">{refreshInbox.error.message}</p>
@@ -348,46 +396,9 @@ export function GmailPanel({
           </div>
         )}
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(320px,42%)_1fr]">
-          <section
-            className={cn(
-              "min-h-0 overflow-y-auto border-r",
-              selectedId && "hidden lg:block",
-            )}
-          >
-            {(view === "inbox" || view === "starred" || view === "sent") && (
-              <MailList
-                emails={emails.data}
-                isLoading={emails.isLoading}
-                error={emails.error?.message}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onDelete={(messageId) => deleteMessage.mutate({ messageId })}
-                isDeleting={deleteMessage.isPending}
-              />
-            )}
-
-            {view === "drafts" && (
-              <DraftList
-                drafts={drafts.data}
-                isLoading={drafts.isLoading}
-                error={drafts.error?.message}
-                isSending={sendDraft.isPending}
-                isDeleting={deleteDraft.isPending}
-                onSend={(draftId) => sendDraft.mutate({ draftId })}
-                onDelete={(draftId) => deleteDraft.mutate({ draftId })}
-              />
-            )}
-          </section>
-
-          <section
-            className={cn(
-              "bg-muted/20 min-h-0 overflow-y-auto",
-              !selectedId && "hidden lg:block",
-            )}
-          >
-            <ReadingPane
-              selectedId={selectedId}
+        <div className="bg-muted/20 min-h-0 flex-1 overflow-y-auto">
+          {selectedId ? (
+            <FullEmailView
               selectedEmail={selectedEmail.data}
               isLoading={selectedEmail.isLoading}
               error={selectedEmail.error?.message}
@@ -399,186 +410,95 @@ export function GmailPanel({
               isStarPending={modifyMessageLabels.isPending}
               onToggleStar={toggleStar}
             />
-          </section>
+          ) : (
+            <section className="bg-background min-h-full">
+              {(view === "inbox" || view === "starred" || view === "sent") && (
+                <MailList
+                  emails={emails.data}
+                  isLoading={emails.isLoading}
+                  error={emails.error?.message}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  onDelete={(messageId) => deleteMessage.mutate({ messageId })}
+                  isDeleting={deleteMessage.isPending}
+                />
+              )}
+
+              {view === "drafts" && (
+                <DraftList
+                  drafts={drafts.data}
+                  isLoading={drafts.isLoading}
+                  error={drafts.error?.message}
+                  isSending={sendDraft.isPending}
+                  isDeleting={deleteDraft.isPending}
+                  onSend={(draftId) => sendDraft.mutate({ draftId })}
+                  onDelete={(draftId) => deleteDraft.mutate({ draftId })}
+                />
+              )}
+            </section>
+          )}
         </div>
       </div>
 
-      {/* Compose */}
-      <Sheet open={composeOpen} onOpenChange={setComposeOpen}>
-        <SheetContent className="w-full sm:max-w-xl">
-          <SheetHeader className="border-b">
-            <SheetTitle>New message</SheetTitle>
-          </SheetHeader>
+      {composerMode && (
+        <EmailComposer
+          mode={composerMode}
+          to={to}
+          cc={cc}
+          bcc={bcc}
+          subject={subject}
+          body={body}
+          onToChange={setTo}
+          onCcChange={setCc}
+          onBccChange={setBcc}
+          onSubjectChange={setSubject}
+          onBodyChange={setBody}
+          minimized={composerMinimized}
+          expanded={composerExpanded}
+          onMinimize={() => setComposerMinimized(true)}
+          onRestore={() => setComposerMinimized(false)}
+          onExpandToggle={() => setComposerExpanded((expanded) => !expanded)}
+          onDiscard={discardComposer}
+          onSaveDraft={
+            composerMode === "reply"
+              ? undefined
+              : () => createDraft.mutate({ to, cc, bcc, subject, body })
+          }
+          onSend={() => {
+            if (composerMode === "reply") {
+              if (!selectedEmail.data?.threadId) return;
 
-          <div className="flex flex-1 flex-col gap-3 px-4">
-            <Input
-              type="email"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="To"
-            />
+              replyToMessage.mutate({
+                threadId: selectedEmail.data.threadId,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+              });
+              return;
+            }
 
-            <Input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Subject"
-            />
-
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Message"
-              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-64 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
-            />
-
-            {(createDraft.error ?? sendEmail.error) && (
-              <p className="text-destructive text-sm">
-                {(createDraft.error ?? sendEmail.error)?.message}
-              </p>
-            )}
-          </div>
-
-          <SheetFooter className="border-t sm:flex-row sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => createDraft.mutate({ to, subject, body })}
-              disabled={createDraft.isPending || !canSubmitCompose}
-            >
-              {createDraft.isPending ? "Saving" : "Save draft"}
-            </Button>
-
-            <Button
-              type="button"
-              onClick={() => sendEmail.mutate({ to, subject, body })}
-              disabled={sendEmail.isPending || !canSubmitCompose}
-            >
-              <Send className="h-3.5 w-3.5" />
-              {sendEmail.isPending ? "Sending" : "Send"}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Reply */}
-      <Sheet open={replyOpen} onOpenChange={setReplyOpen}>
-        <SheetContent className="w-full sm:max-w-xl">
-          <SheetHeader className="border-b">
-            <SheetTitle>Reply</SheetTitle>
-          </SheetHeader>
-
-          <div className="flex flex-1 flex-col gap-3 px-4">
-            <Input
-              type="email"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="To"
-            />
-
-            <Input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Subject"
-            />
-
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your reply..."
-              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-64 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
-            />
-
-            {replyToMessage.error && (
-              <p className="text-destructive text-sm">
-                {replyToMessage.error.message}
-              </p>
-            )}
-          </div>
-
-          <SheetFooter className="border-t sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              onClick={() => {
-                if (!selectedEmail.data?.threadId) return;
-
-                replyToMessage.mutate({
-                  threadId: selectedEmail.data.threadId,
-                  to,
-                  subject,
-                  body,
-                });
-              }}
-              disabled={
-                replyToMessage.isPending ||
-                !to ||
-                !subject ||
-                !body ||
-                !selectedEmail.data?.threadId
-              }
-            >
-              <Send className="h-3.5 w-3.5" />
-              {replyToMessage.isPending ? "Sending" : "Send Reply"}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
-
-      {/* Forward */}
-      <Sheet open={forwardOpen} onOpenChange={setForwardOpen}>
-        <SheetContent className="w-full sm:max-w-xl">
-          <SheetHeader className="border-b">
-            <SheetTitle>Forward</SheetTitle>
-          </SheetHeader>
-
-          <div className="flex flex-1 flex-col gap-3 px-4">
-            <Input
-              type="email"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="To"
-            />
-
-            <Input
-              type="text"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Subject"
-            />
-
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write a message..."
-              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-64 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
-            />
-
-            {sendEmail.error && (
-              <p className="text-destructive text-sm">
-                {sendEmail.error.message}
-              </p>
-            )}
-          </div>
-
-          <SheetFooter className="border-t sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              onClick={() => {
-                sendEmail.mutate({
-                  to,
-                  subject,
-                  body,
-                });
-              }}
-              disabled={sendEmail.isPending || !to || !subject || !body}
-            >
-              <Send className="h-3.5 w-3.5" />
-              {sendEmail.isPending ? "Sending" : "Forward"}
-            </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+            sendEmail.mutate({ to, cc, bcc, subject, body });
+          }}
+          canSend={
+            composerMode === "reply"
+              ? Boolean(to && subject && body && selectedEmail.data?.threadId)
+              : canSubmitCompose
+          }
+          isSaving={createDraft.isPending}
+          isSending={
+            composerMode === "reply"
+              ? replyToMessage.isPending
+              : sendEmail.isPending
+          }
+          error={
+            composerMode === "reply"
+              ? replyToMessage.error?.message
+              : (createDraft.error ?? sendEmail.error)?.message
+          }
+        />
+      )}
     </>
   );
 }
@@ -786,8 +706,7 @@ function DraftList({
   );
 }
 
-function ReadingPane({
-  selectedId,
+function FullEmailView({
   selectedEmail,
   isLoading,
   error,
@@ -799,7 +718,6 @@ function ReadingPane({
   isStarPending,
   onToggleStar,
 }: {
-  selectedId: string | null;
   selectedEmail:
     | {
         id: string;
@@ -829,41 +747,23 @@ function ReadingPane({
   isStarPending: boolean;
   onToggleStar: () => void;
 }) {
-  if (!selectedId) {
-    return (
-      <div className="flex h-full items-center justify-center px-8 text-center">
-        <div>
-          <p className="font-heading text-sm font-semibold">Select a message</p>
-
-          <p className="text-muted-foreground mt-1 text-sm">
-            Your reading pane keeps the conversation in context.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <article className="mx-auto max-w-3xl px-5 py-5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={onBack}
-        className="mb-4 lg:hidden"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to {view}
-      </Button>
+    <article className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mb-4 flex items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to {view}
+        </Button>
+      </div>
 
       {isLoading && <StatusLine>Loading message...</StatusLine>}
 
       {error && <StatusLine tone="error">{error}</StatusLine>}
 
       {selectedEmail && (
-        <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm">
+        <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm sm:p-6">
           <div className="flex items-start justify-between gap-4">
-            <h2 className="font-heading min-w-0 text-xl leading-tight font-semibold">
+            <h2 className="font-heading min-w-0 text-2xl leading-tight font-semibold">
               {selectedEmail.subject || "(no subject)"}
             </h2>
 
@@ -938,6 +838,546 @@ function ReadingPane({
         </div>
       )}
     </article>
+  );
+}
+
+function EmailComposer({
+  mode,
+  to,
+  cc,
+  bcc,
+  subject,
+  body,
+  onToChange,
+  onCcChange,
+  onBccChange,
+  onSubjectChange,
+  onBodyChange,
+  minimized,
+  expanded,
+  onMinimize,
+  onRestore,
+  onExpandToggle,
+  onDiscard,
+  onSaveDraft,
+  onSend,
+  canSend,
+  isSaving,
+  isSending,
+  error,
+}: {
+  mode: ComposerMode;
+  to: string;
+  cc: string;
+  bcc: string;
+  subject: string;
+  body: string;
+  onToChange: (value: string) => void;
+  onCcChange: (value: string) => void;
+  onBccChange: (value: string) => void;
+  onSubjectChange: (value: string) => void;
+  onBodyChange: (value: string) => void;
+  minimized: boolean;
+  expanded: boolean;
+  onMinimize: () => void;
+  onRestore: () => void;
+  onExpandToggle: () => void;
+  onDiscard: () => void;
+  onSaveDraft?: () => void;
+  onSend: () => void;
+  canSend: boolean;
+  isSaving: boolean;
+  isSending: boolean;
+  error?: string;
+}) {
+  const title =
+    mode === "compose" ? "New message" : mode === "reply" ? "Reply" : "Forward";
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [ccVisible, setCcVisible] = useState(Boolean(cc));
+  const [bccVisible, setBccVisible] = useState(Boolean(bcc));
+
+  useEffect(() => {
+    if (cc) setCcVisible(true);
+  }, [cc]);
+
+  useEffect(() => {
+    if (bcc) setBccVisible(true);
+  }, [bcc]);
+
+  if (minimized) {
+    return (
+      <div className="bg-popover fixed right-3 bottom-3 z-40 w-[min(24rem,calc(100vw-1.5rem))] rounded-t-lg border shadow-lg">
+        <button
+          type="button"
+          onClick={onRestore}
+          className="hover:bg-muted flex h-10 w-full items-center justify-between gap-3 rounded-t-lg px-3 text-left text-sm font-medium"
+        >
+          <span className="truncate">{subject || title}</span>
+          <span className="text-muted-foreground text-xs">Open</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <section
+      className={cn(
+        "bg-popover text-popover-foreground fixed z-40 flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-lg border shadow-2xl",
+        expanded
+          ? "inset-4 md:inset-x-[10vw] md:inset-y-8"
+          : "right-3 bottom-3 left-3 sm:left-auto sm:w-[38rem]",
+      )}
+      aria-label={title}
+    >
+      <ComposerHeader
+        title={title}
+        expanded={expanded}
+        onMinimize={onMinimize}
+        onExpandToggle={onExpandToggle}
+        onDiscard={onDiscard}
+      />
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="border-b px-4 py-2">
+          <RecipientField
+            value={to}
+            onChange={onToChange}
+            onShowCc={() => setCcVisible(true)}
+            onShowBcc={() => setBccVisible(true)}
+            showCcButton={!ccVisible}
+            showBccButton={!bccVisible}
+          />
+        </div>
+
+        {ccVisible && (
+          <div className="border-b px-4 py-2">
+            <ComposerAddressField
+              label="Cc"
+              value={cc}
+              onChange={onCcChange}
+              placeholder="Optional recipients"
+            />
+          </div>
+        )}
+
+        {bccVisible && (
+          <div className="border-b px-4 py-2">
+            <ComposerAddressField
+              label="Bcc"
+              value={bcc}
+              onChange={onBccChange}
+              placeholder="Hidden recipients"
+            />
+          </div>
+        )}
+
+        <div className="border-b px-4 py-2">
+          <SubjectField value={subject} onChange={onSubjectChange} />
+        </div>
+
+        <MessageEditor
+          value={body}
+          onChange={onBodyChange}
+          placeholder={
+            mode === "reply"
+              ? "Write your reply..."
+              : mode === "forward"
+                ? "Write a message..."
+                : "Message"
+          }
+        />
+
+        {error && (
+          <p className="text-destructive border-t px-4 py-2 text-sm">{error}</p>
+        )}
+
+        <ComposerToolbar
+          canSend={canSend}
+          isSending={isSending}
+          isSaving={isSaving}
+          sendLabel={
+            mode === "reply"
+              ? "Send Reply"
+              : mode === "forward"
+                ? "Forward"
+                : "Send"
+          }
+          onSend={onSend}
+          onSaveDraft={onSaveDraft}
+          onDiscard={onDiscard}
+          emojiOpen={emojiOpen}
+          onEmojiOpenChange={setEmojiOpen}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ComposerHeader({
+  title,
+  expanded,
+  onMinimize,
+  onExpandToggle,
+  onDiscard,
+}: {
+  title: string;
+  expanded: boolean;
+  onMinimize: () => void;
+  onExpandToggle: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <div className="bg-muted/60 flex h-10 shrink-0 items-center justify-between gap-3 border-b px-3">
+      <h3 className="truncate text-sm font-semibold">{title}</h3>
+
+      <div className="flex items-center gap-1">
+        <IconButton label="Minimize" onClick={onMinimize}>
+          <Minimize2 className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton
+          label={expanded ? "Restore composer" : "Expand composer"}
+          onClick={onExpandToggle}
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </IconButton>
+        <IconButton label="Discard draft" onClick={onDiscard}>
+          <X className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+function RecipientField({
+  value,
+  onChange,
+  onShowCc,
+  onShowBcc,
+  showCcButton,
+  showBccButton,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onShowCc: () => void;
+  onShowBcc: () => void;
+  showCcButton: boolean;
+  showBccButton: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2">
+      <span className="text-muted-foreground text-xs font-medium">To</span>
+      <Input
+        type="email"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="name@example.com"
+        className="h-7 border-0 bg-transparent! px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+      />
+
+      <div className="flex items-center gap-1">
+        {showCcButton && (
+          <button
+            type="button"
+            onClick={onShowCc}
+            className="text-muted-foreground hover:text-foreground rounded px-1.5 py-1 text-xs font-medium"
+          >
+            Cc
+          </button>
+        )}
+        {showBccButton && (
+          <button
+            type="button"
+            onClick={onShowBcc}
+            className="text-muted-foreground hover:text-foreground rounded px-1.5 py-1 text-xs font-medium"
+          >
+            Bcc
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ComposerAddressField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: "email" | "text";
+}) {
+  return (
+    <label className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
+      <Input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-7 border-0 bg-transparent! px-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+      />
+    </label>
+  );
+}
+
+function SubjectField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Subject"
+      className="h-7 border-0 bg-transparent! px-0 font-medium shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent!"
+    />
+  );
+}
+
+function MessageEditor({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || editor.textContent === value) return;
+
+    editor.textContent = value;
+  }, [value]);
+
+  return (
+    <div className="relative min-h-72 flex-1 overflow-y-auto px-4 py-3">
+      {!value && (
+        <p className="text-muted-foreground pointer-events-none absolute text-sm">
+          {placeholder}
+        </p>
+      )}
+      <div
+        ref={editorRef}
+        contentEditable
+        role="textbox"
+        aria-multiline="true"
+        suppressContentEditableWarning
+        onInput={(event) => {
+          onChange(event.currentTarget.innerText);
+        }}
+        className="min-h-64 text-sm leading-6 whitespace-pre-wrap outline-none"
+      />
+    </div>
+  );
+}
+
+function ComposerToolbar({
+  canSend,
+  isSending,
+  isSaving,
+  sendLabel,
+  onSend,
+  onSaveDraft,
+  onDiscard,
+  emojiOpen,
+  onEmojiOpenChange,
+}: {
+  canSend: boolean;
+  isSending: boolean;
+  isSaving: boolean;
+  sendLabel: string;
+  onSend: () => void;
+  onSaveDraft?: () => void;
+  onDiscard: () => void;
+  emojiOpen: boolean;
+  onEmojiOpenChange: (open: boolean) => void;
+}) {
+  const applyFormat = (command: string, value?: string) => {
+    document.execCommand(command, false, value);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    applyFormat("insertText", emoji);
+    onEmojiOpenChange(false);
+  };
+
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-3 py-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Button
+          type="button"
+          onClick={onSend}
+          disabled={isSending || !canSend}
+          className="h-8 px-4"
+        >
+          <Send className="h-3.5 w-3.5" />
+          {isSending ? "Sending" : sendLabel}
+        </Button>
+
+        {onSaveDraft && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onSaveDraft}
+            disabled={isSaving || !canSend}
+            className="h-8"
+          >
+            {isSaving ? "Saving" : "Save draft"}
+          </Button>
+        )}
+
+        <div className="bg-border mx-1 h-5 w-px" />
+
+        <ToolbarButton label="Bold" onClick={() => applyFormat("bold")}>
+          <Bold className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton label="Italic" onClick={() => applyFormat("italic")}>
+          <Italic className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Underline"
+          onClick={() => applyFormat("underline")}
+        >
+          <Underline className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Numbered list"
+          onClick={() => applyFormat("insertOrderedList")}
+        >
+          <ListOrdered className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Bulleted list"
+          onClick={() => applyFormat("insertUnorderedList")}
+        >
+          <List className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Quote"
+          onClick={() => applyFormat("formatBlock", "blockquote")}
+        >
+          <Quote className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Insert link"
+          onClick={() => {
+            const href = window.prompt("Paste a link");
+            if (!href) return;
+            applyFormat("createLink", href);
+          }}
+        >
+          <Link className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Clear formatting"
+          onClick={() => applyFormat("removeFormat")}
+        >
+          <Eraser className="h-3.5 w-3.5" />
+        </ToolbarButton>
+
+        <div className="relative">
+          <ToolbarButton
+            label="Insert emoji"
+            onClick={() => onEmojiOpenChange(!emojiOpen)}
+          >
+            <Smile className="h-3.5 w-3.5" />
+          </ToolbarButton>
+
+          {emojiOpen && (
+            <div className="bg-popover absolute bottom-9 left-0 z-50 flex gap-1 rounded-lg border p-1 shadow-lg">
+              {["🙂", "👍", "🎉", "❤️", "🙏"].map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => insertEmoji(emoji)}
+                  className="hover:bg-muted flex h-8 w-8 items-center justify-center rounded-md text-sm"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <ToolbarButton label="Attachments are not available yet" disabled>
+          <Paperclip className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton label="Image insertion is not available yet" disabled>
+          <ImageIcon className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton label="Plain text delivery" disabled>
+          <AlignLeft className="h-3.5 w-3.5" />
+        </ToolbarButton>
+      </div>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={onDiscard}
+        aria-label="Discard"
+        title="Discard"
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function ToolbarButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <IconButton label={label} onClick={onClick} disabled={disabled}>
+      {children}
+    </IconButton>
+  );
+}
+
+function IconButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
+    >
+      {children}
+    </button>
   );
 }
 

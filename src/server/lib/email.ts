@@ -1,5 +1,7 @@
 export function encodeRawEmail(opts: {
   to: string;
+  cc?: string;
+  bcc?: string;
   subject: string;
   body: string;
   from?: string;
@@ -7,6 +9,8 @@ export function encodeRawEmail(opts: {
   const lines = [
     ...(opts.from ? [`From: ${opts.from}`] : []),
     `To: ${opts.to}`,
+    ...(opts.cc ? [`Cc: ${opts.cc}`] : []),
+    ...(opts.bcc ? [`Bcc: ${opts.bcc}`] : []),
     `Subject: ${opts.subject}`,
     "Content-Type: text/plain; charset=utf-8",
     "MIME-Version: 1.0",

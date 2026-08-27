@@ -96,11 +96,11 @@ export function AccountMenu({
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>{children}</DropdownMenuTrigger>
+      <DropdownMenuTrigger render={children} />
       <DropdownMenuContent align={align} className="w-56">
         <div className="px-2 py-1.5">
           <p className="text-foreground truncate text-sm font-medium">
-            {user?.name || "Signed in"}
+            {user?.name ?? "Signed in"}
           </p>
           <p className="text-muted-foreground truncate text-xs">
             {user?.email}
@@ -265,7 +265,7 @@ function SidebarBody({
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">
-                  {user?.name || "Account"}
+                  {user?.name ?? "Account"}
                 </p>
                 <p className="text-sidebar-foreground/50 truncate text-[11px]">
                   {user?.email}
