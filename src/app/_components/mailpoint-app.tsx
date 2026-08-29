@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
@@ -105,14 +105,37 @@ export function MailPointApp({
   } | null>(null);
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
   const weekLabel = formatWeekLabel(week.start, week.end);
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+  
+      const section = (
+        Object.entries(SECTION_PATHS).find(
+          ([, sectionPath]) => sectionPath === path,
+        )?.[0] ?? "overview"
+      ) as AppSection;
+  
+      setActiveSection(section);
+    };
+  
+    window.addEventListener("popstate", handlePopState);
+  
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
   const handleEmailAttendees = (event: CalendarEvent) => {
-    const attendees = event.attendees
-      .map((attendee) => {
-        const match = /<([^>]+)>/.exec(attendee);
-        return match?.[1] ?? attendee;
-      })
-      .map((email) => email.trim())
-      .filter(Boolean);
+    const attendees = Array.from(
+      new Set(
+        event.attendees
+          .map((attendee) => {
+            const match = /<([^>]+)>/.exec(attendee);
+            return match?.[1] ?? attendee;
+          })
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    );
 
     if (attendees.length === 0) return;
 
