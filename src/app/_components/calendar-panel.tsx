@@ -289,7 +289,7 @@ export function CalendarPanel({
           </div>
         </div>
 
-        {(refreshEvents.data || refreshEvents.error) && (
+        {(refreshEvents.data ?? refreshEvents.error) && (
           <div className="border-b px-4 py-2 text-xs">
             {refreshEvents.error && (
               <p className="text-destructive">{refreshEvents.error.message}</p>
@@ -545,7 +545,7 @@ export function CalendarPanel({
               placeholder="Attendees (comma-separated)"
             />
 
-            {(updateEvent.error || deleteEvent.error) && (
+            {(updateEvent.error ?? deleteEvent.error) && (
               <p className="text-destructive text-sm">
                 {(updateEvent.error ?? deleteEvent.error)?.message}
               </p>

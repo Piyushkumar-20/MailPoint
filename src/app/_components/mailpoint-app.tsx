@@ -44,11 +44,11 @@ function SettingsPanel({
         <dl className="flex flex-col gap-3 text-sm">
           <div className="flex justify-between border-b pb-3">
             <dt className="text-muted-foreground">Name</dt>
-            <dd>{user?.name || "-"}</dd>
+            <dd>{user?.name ?? "-"}</dd>
           </div>
           <div className="flex justify-between border-b pb-3">
             <dt className="text-muted-foreground">Email</dt>
-            <dd>{user?.email || "-"}</dd>
+            <dd>{user?.email ?? "-"}</dd>
           </div>
         </dl>
         <Button

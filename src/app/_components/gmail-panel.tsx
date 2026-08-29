@@ -412,28 +412,6 @@ export function GmailPanel({
   };
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
-
-  const openScheduleMeeting = () => {
-    if (!selectedEmail.data) return;
-
-    const candidates = getMeetingAttendeeCandidates(
-      {
-        from: selectedEmail.data.from,
-        to: selectedEmail.data.to,
-      },
-      view,
-    );
-
-    setScheduleAttendee(candidates[0] ?? "");
-    setMeetingDate(getLocalDateValue());
-    setMeetingStartTime("09:00");
-    setMeetingEndTime("18:00");
-    setMeetingDuration(30);
-    setSelectedMeetingSlot(null);
-    setHasSearchedAvailability(false);
-    setScheduleOpen(true);
-  };
-
   const createScheduledMeeting = () => {
     if (!selectedMeetingSlot || !selectedEmail.data || !scheduleAttendee) return;
 
@@ -1116,7 +1094,7 @@ function ScheduleMeetingDialog({
                 </select>
               </label>
             </div>
-            {!attendee && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">We couldn't find an email address in this message to use as the attendee.</p>}
+            {!attendee && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">We couldn&apos;t find an email address in this message to use as the attendee.</p>}
             {startTime >= endTime && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">The end time must be later than the start time.</p>}
             <div className="flex justify-end"><Button type="button" onClick={onFindAvailability} disabled={!canSearch}>{isLoadingAvailability ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking calendars</> : <><Clock3 className="h-3.5 w-3.5" />Find available times</>}</Button></div>
             {availabilityError && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{availabilityError}</p>}

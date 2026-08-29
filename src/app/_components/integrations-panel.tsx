@@ -151,7 +151,7 @@ export function IntegrationsPanel() {
         </div>
       </div>
 
-      {(connections.error || connectError) && (
+      {(connections.error ?? connectError) && (
         <p className="text-sm text-destructive">
           {connectError ?? connections.error?.message}
         </p>

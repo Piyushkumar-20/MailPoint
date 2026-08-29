@@ -265,7 +265,7 @@ export function DashboardOverview({
           icon={Mail}
           state={gmailState}
           loading={connections.isLoading}
-          error={Boolean(connections.error || recentMail.error)}
+          error={Boolean(connections.error ?? recentMail.error)}
           primaryMetric={
             recentMail.isLoading
               ? "Loading"
@@ -290,7 +290,7 @@ export function DashboardOverview({
           icon={CalendarDays}
           state={calendarState}
           loading={connections.isLoading}
-          error={Boolean(connections.error || events.error)}
+          error={Boolean(connections.error ?? events.error)}
           primaryMetric={
             events.isLoading
               ? "Loading"
@@ -299,7 +299,7 @@ export function DashboardOverview({
                 : "No data"
           }
           primaryLabel="Available now"
-          secondaryMetric={nextEvent?.summary || "No upcoming events"}
+          secondaryMetric={nextEvent?.summary ?? "No upcoming events"}
           secondaryLabel="Latest event"
           actionLabel="Open Calendar"
           onAction={() => onNavigate("calendar")}
@@ -325,7 +325,7 @@ export function DashboardOverview({
               <StatusLine tone="error">{recentMail.error.message}</StatusLine>
             )}
 
-            {recentMail.data && recentMail.data.length === 0 && (
+            {recentMail.data && recentMail?.data.length === 0 && (
               <EmptyBlock
                 title="No recent mail"
                 description="Refresh Gmail from the Inbox when you are connected."
@@ -381,7 +381,7 @@ export function DashboardOverview({
               <StatusLine tone="error">{events.error.message}</StatusLine>
             )}
 
-            {events.data && events.data.length === 0 && (
+            {events.data && events.data?.length === 0 && (
               <EmptyBlock
                 title="No events this week"
                 description="Your calendar is clear in this view."
