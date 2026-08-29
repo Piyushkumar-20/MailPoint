@@ -1,4 +1,4 @@
-import "dotenv/config"; 
+import "dotenv/config";
 import { createCorsair } from "corsair";
 import { gmail } from "@corsair-dev/gmail";
 import { googlecalendar } from "@corsair-dev/googlecalendar";
