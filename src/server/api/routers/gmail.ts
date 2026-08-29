@@ -95,7 +95,6 @@ export const gmailRouter = createTRPCRouter({
           });
 
           const headers = fullMessage.payload?.headers;
-
           return {
             id: fullMessage.id ?? message.id,
             threadId: fullMessage.threadId ?? "",
@@ -112,6 +111,7 @@ export const gmailRouter = createTRPCRouter({
                 ? String(fullMessage.internalDate)
                 : null,
             ),
+            labelIds: fullMessage.labelIds ?? [],
           };
         }),
       );

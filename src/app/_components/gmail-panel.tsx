@@ -75,9 +75,7 @@ function getMeetingAttendeeCandidates(
   view: "inbox" | "starred" | "drafts" | "sent",
 ) {
   const orderedSources =
-    view === "sent"
-      ? [email.to, email.from]
-      : [email.from, email.to];
+    view === "sent" ? [email.to, email.from] : [email.from, email.to];
 
   return Array.from(
     new Set(orderedSources.flatMap((source) => extractEmails(source))),
@@ -119,7 +117,8 @@ export function GmailPanel({
   const [meetingEndTime, setMeetingEndTime] = useState("18:00");
   const [scheduleAttendee, setScheduleAttendee] = useState("");
   const [hasSearchedAvailability, setHasSearchedAvailability] = useState(false);
-  const [selectedMeetingSlot, setSelectedMeetingSlot] = useState<MeetingSlot | null>(null);
+  const [selectedMeetingSlot, setSelectedMeetingSlot] =
+    useState<MeetingSlot | null>(null);
 
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
@@ -252,6 +251,44 @@ export function GmailPanel({
     },
   });
 
+  const markAsRead = api.gmail.modifyMessageLabels.useMutation({
+    onMutate: async ({ messageId }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+
+          return current.map((email) =>
+            email.id === messageId
+              ? {
+                  ...email,
+                  labelIds: email.labelIds.filter(
+                    (labelId) => labelId !== "UNREAD",
+                  ),
+                }
+              : email,
+          );
+        },
+      );
+    },
+
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+    },
+
+    onError: async () => {
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
   const sendDraft = api.gmail.sendDraft.useMutation({
     onSuccess: async () => {
       await utils.gmail.searchEmails.invalidate();
@@ -355,7 +392,7 @@ export function GmailPanel({
 
   useEffect(() => {
     if (!calendarComposeRequest) return;
-  
+
     setTo(calendarComposeRequest.to);
     setCc("");
     setBcc("");
@@ -433,7 +470,8 @@ export function GmailPanel({
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
   const createScheduledMeeting = () => {
-    if (!selectedMeetingSlot || !selectedEmail.data || !scheduleAttendee) return;
+    if (!selectedMeetingSlot || !selectedEmail.data || !scheduleAttendee)
+      return;
 
     const start = new Date(selectedMeetingSlot.start);
     const end = new Date(selectedMeetingSlot.end);
@@ -574,7 +612,13 @@ export function GmailPanel({
                   isLoading={emails.isLoading}
                   error={emails.error?.message}
                   selectedId={selectedId}
-                  onSelect={setSelectedId}
+                  onSelect={(messageId) => {
+                    setSelectedId(messageId);
+                    markAsRead.mutate({
+                      messageId,
+                      removeLabelIds: ["UNREAD"],
+                    });
+                  }}
                   onDelete={(messageId) => deleteMessage.mutate({ messageId })}
                   isDeleting={deleteMessage.isPending}
                 />
@@ -611,15 +655,43 @@ export function GmailPanel({
           availabilityError={availabilityQuery.error?.message}
           isSending={sendMeetingInvite.isPending}
           sendError={sendMeetingInvite.error?.message}
-          onAttendeeChange={(value) => { setScheduleAttendee(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
-          onDurationChange={(value) => { setMeetingDuration(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
-          onDateChange={(value) => { setMeetingDate(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
-          onStartTimeChange={(value) => { setMeetingStartTime(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
-          onEndTimeChange={(value) => { setMeetingEndTime(value); setSelectedMeetingSlot(null); setHasSearchedAvailability(false); }}
+          onAttendeeChange={(value) => {
+            setScheduleAttendee(value);
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+          }}
+          onDurationChange={(value) => {
+            setMeetingDuration(value);
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+          }}
+          onDateChange={(value) => {
+            setMeetingDate(value);
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+          }}
+          onStartTimeChange={(value) => {
+            setMeetingStartTime(value);
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+          }}
+          onEndTimeChange={(value) => {
+            setMeetingEndTime(value);
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+          }}
           onSelectSlot={setSelectedMeetingSlot}
-          onFindAvailability={() => { setSelectedMeetingSlot(null); setHasSearchedAvailability(true); void availabilityQuery.refetch(); }}
+          onFindAvailability={() => {
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(true);
+            void availabilityQuery.refetch();
+          }}
           onCreateMeeting={createScheduledMeeting}
-          onClose={() => { setSelectedMeetingSlot(null); setHasSearchedAvailability(false); setScheduleOpen(false); }}
+          onClose={() => {
+            setSelectedMeetingSlot(null);
+            setHasSearchedAvailability(false);
+            setScheduleOpen(false);
+          }}
         />
       )}
 
@@ -702,6 +774,7 @@ function MailList({
         snippet: string;
         from: string;
         date: string | null;
+        labelIds: string[];
       }[]
     | undefined;
   isLoading: boolean;
@@ -711,13 +784,8 @@ function MailList({
   onDelete: (id: string) => void;
   isDeleting: boolean;
 }) {
-  if (isLoading) {
-    return <StatusLine>Loading mail...</StatusLine>;
-  }
-
-  if (error) {
-    return <StatusLine tone="error">{error}</StatusLine>;
-  }
+  if (isLoading) return <StatusLine>Loading mail...</StatusLine>;
+  if (error) return <StatusLine tone="error">{error}</StatusLine>;
 
   if (!emails || emails.length === 0) {
     return (
@@ -730,66 +798,87 @@ function MailList({
 
   return (
     <ul>
-      {emails.map((email) => (
-        <li key={email.id} className="border-b">
-          <div
-            className={cn(
-              "hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-l-2 border-l-transparent px-4 py-3 transition-colors",
-              selectedId === email.id &&
-                "border-l-primary bg-primary/10 hover:bg-primary/15",
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => onSelect(email.id)}
-              className="min-w-0 text-left"
+      {emails.map((email) => {
+        const isUnread = email.labelIds.includes("UNREAD");
+
+        return (
+          <li key={email.id} className="border-b">
+            <div
+              className={cn(
+                "group hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
+                isUnread && "bg-muted/40",
+                selectedId === email.id && "bg-accent",
+              )}
             >
-              <span className="block truncate text-sm font-semibold">
-                {email.from ? formatSender(email.from) : "Unknown sender"}
-              </span>
-
-              <span className="mt-0.5 block truncate text-sm font-medium">
-                {email.subject || "(no subject)"}
-              </span>
-
-              {email.snippet && (
-                <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                  {email.snippet}
-                </span>
-              )}
-            </button>
-
-            <div className="flex shrink-0 items-start gap-2">
-              {email.date && (
-                <span className="text-muted-foreground pt-0.5 text-xs">
-                  {formatMessageDate(email.date)}
-                </span>
-              )}
-
-              <Button
+              <button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="text-muted-foreground hover:text-destructive h-7 w-7"
-                aria-label="Delete email"
-                title="Delete email"
-                onClick={(event) => {
-                  event.stopPropagation();
-
-                  const confirmed = window.confirm("Move this email to Trash?");
-
-                  if (!confirmed) return;
-
-                  onDelete(email.id);
-                }}
-                disabled={isDeleting}
+                onClick={() => onSelect(email.id)}
+                className="min-w-0 text-left"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "block truncate text-sm",
+                      isUnread
+                        ? "text-foreground font-semibold"
+                        : "text-foreground font-normal",
+                    )}
+                  >
+                    {email.from ? formatSender(email.from) : "Unknown sender"}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "mt-0.5 block truncate text-sm",
+                      isUnread
+                        ? "text-foreground font-semibold"
+                        : "text-muted-foreground font-normal",
+                    )}
+                  >
+                    {email.subject || "(no subject)"}
+                  </span>
+
+                  {email.snippet && (
+                    <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                      {email.snippet}
+                    </span>
+                  )}
+                </span>
+              </button>
+
+              <div className="flex shrink-0 items-start gap-2">
+                {email.date && (
+                  <span
+                    className={cn(
+                      "pt-0.5 text-xs",
+                      isUnread
+                        ? "text-foreground font-semibold"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {formatMessageDate(email.date)}
+                  </span>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                  aria-label="Delete email"
+                  title="Delete email"
+                  onClick={() => {
+                    onDelete(email.id);
+                  }}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-          </div>
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1060,30 +1149,81 @@ function ScheduleMeetingDialog({
   onCreateMeeting,
   onClose,
 }: {
-  attendee: string; attendeeCandidates: string[]; subject: string; duration: number; date: string; startTime: string; endTime: string;
+  attendee: string;
+  attendeeCandidates: string[];
+  subject: string;
+  duration: number;
+  date: string;
+  startTime: string;
+  endTime: string;
   selectedSlot: { start: string; end: string } | null;
-  availability?: { attendeeAvailability: "available" | "partial" | "unknown"; slots: { start: string; end: string }[]; warnings: string[] };
-  isLoadingAvailability: boolean; availabilityError?: string; isSending: boolean; sendError?: string;
+  availability?: {
+    attendeeAvailability: "available" | "partial" | "unknown";
+    slots: { start: string; end: string }[];
+    warnings: string[];
+  };
+  isLoadingAvailability: boolean;
+  availabilityError?: string;
+  isSending: boolean;
+  sendError?: string;
   onAttendeeChange: (value: string) => void;
-  onDurationChange: (value: number) => void; onDateChange: (value: string) => void;
-  onStartTimeChange: (value: string) => void; onEndTimeChange: (value: string) => void;
-  onSelectSlot: (slot: { start: string; end: string }) => void; onFindAvailability: () => void;
-  onCreateMeeting: () => void; onClose: () => void;
+  onDurationChange: (value: number) => void;
+  onDateChange: (value: string) => void;
+  onStartTimeChange: (value: string) => void;
+  onEndTimeChange: (value: string) => void;
+  onSelectSlot: (slot: { start: string; end: string }) => void;
+  onFindAvailability: () => void;
+  onCreateMeeting: () => void;
+  onClose: () => void;
 }) {
-  const canSearch = Boolean(attendee) && Boolean(date) && startTime < endTime && !isLoadingAvailability;
+  const canSearch =
+    Boolean(attendee) &&
+    Boolean(date) &&
+    startTime < endTime &&
+    !isLoadingAvailability;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Schedule meeting" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Schedule meeting"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <section className="bg-card text-card-foreground flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
-          <div><div className="flex items-center gap-2"><div className="bg-primary/10 text-primary flex h-9 w-9 items-center justify-center rounded-lg"><CalendarDays className="h-4 w-4" /></div><div><h2 className="text-base font-semibold">Schedule meeting</h2><p className="text-muted-foreground max-w-md truncate text-xs">{subject || "Meeting from email"}</p></div></div></div>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose}>×</Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="bg-primary/10 text-primary flex h-9 w-9 items-center justify-center rounded-lg">
+                <CalendarDays className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold">Schedule meeting</h2>
+                <p className="text-muted-foreground max-w-md truncate text-xs">
+                  {subject || "Meeting from email"}
+                </p>
+              </div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+          >
+            ×
+          </Button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           <div className="space-y-5">
             <div className="bg-muted/35 rounded-lg border p-4">
-              <div className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4" />Attendee</div>
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Users className="h-4 w-4" />
+                Attendee
+              </div>
               {attendeeCandidates.length > 1 ? (
                 <select
                   value={attendee}
@@ -1091,41 +1231,188 @@ function ScheduleMeetingDialog({
                   className="border-input bg-background mt-2 h-9 w-full rounded-md border px-3 text-sm outline-none"
                 >
                   {attendeeCandidates.map((candidate) => (
-                    <option key={candidate} value={candidate}>{candidate}</option>
+                    <option key={candidate} value={candidate}>
+                      {candidate}
+                    </option>
                   ))}
                 </select>
               ) : (
-                <p className="text-muted-foreground mt-1 text-sm">{attendee || "No attendee detected"}</p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {attendee || "No attendee detected"}
+                </p>
               )}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5"><span className="text-sm font-medium">Duration</span><select value={duration} onChange={(e) => onDurationChange(Number(e.target.value))} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none"><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>60 minutes</option></select></label>
-              <label className="space-y-1.5"><span className="text-sm font-medium">Date</span><Input type="date" value={date} onChange={(e) => onDateChange(e.target.value)} className="composer-input" /></label>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">Duration</span>
+                <select
+                  value={duration}
+                  onChange={(e) => onDurationChange(Number(e.target.value))}
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none"
+                >
+                  <option value={15}>15 minutes</option>
+                  <option value={30}>30 minutes</option>
+                  <option value={45}>45 minutes</option>
+                  <option value={60}>60 minutes</option>
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="text-sm font-medium">Date</span>
+                <Input
+                  type="date"
+                  value={date}
+                  onChange={(e) => onDateChange(e.target.value)}
+                  className="composer-input"
+                />
+              </label>
               <label className="space-y-1.5">
                 <span className="text-sm font-medium">From</span>
-                <select value={startTime} onChange={(e) => onStartTimeChange(e.target.value)} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none">
-                  {MEETING_TIME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select
+                  value={startTime}
+                  onChange={(e) => onStartTimeChange(e.target.value)}
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none"
+                >
+                  {MEETING_TIME_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="space-y-1.5">
                 <span className="text-sm font-medium">Until</span>
-                <select value={endTime} onChange={(e) => onEndTimeChange(e.target.value)} className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none">
-                  {MEETING_TIME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select
+                  value={endTime}
+                  onChange={(e) => onEndTimeChange(e.target.value)}
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm outline-none"
+                >
+                  {MEETING_TIME_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
-            {!attendee && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">We couldn&apos;t find an email address in this message to use as the attendee.</p>}
-            {startTime >= endTime && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">The end time must be later than the start time.</p>}
-            <div className="flex justify-end"><Button type="button" onClick={onFindAvailability} disabled={!canSearch}>{isLoadingAvailability ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking calendars</> : <><Clock3 className="h-3.5 w-3.5" />Find available times</>}</Button></div>
-            {availabilityError && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{availabilityError}</p>}
-            {availability && <div className="space-y-3"><div><h3 className="text-sm font-semibold">Available times</h3><p className="text-muted-foreground mt-0.5 text-xs">{availability.attendeeAvailability === "unknown" ? "Only your calendar could be checked." : "These times are free on both calendars."}</p></div>
-              {availability.warnings.map((warning) => <div key={warning} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm">{warning}</div>)}
-              {availability.slots.length > 0 ? <div className="grid gap-2 sm:grid-cols-2">{availability.slots.map((slot) => { const isSelected = selectedSlot?.start === slot.start && selectedSlot?.end === slot.end; return <button key={`${slot.start}-${slot.end}`} type="button" onClick={() => onSelectSlot(slot)} className={cn("flex items-center justify-between rounded-lg border px-3 py-3 text-left text-sm transition-colors", isSelected ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted/60")}>{formatMeetingTime(slot.start)} – {formatMeetingTime(slot.end)}{isSelected && <Check className="h-4 w-4" />}</button>; })}</div> : <div className="rounded-lg border border-dashed px-4 py-8 text-center"><p className="text-sm font-medium">No matching time slots</p><p className="text-muted-foreground mt-1 text-xs">Try a wider time window or a different date.</p></div>}
-            </div>}
-            {sendError && <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">{sendError}</p>}
+            {!attendee && (
+              <p className="text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-sm">
+                We couldn&apos;t find an email address in this message to use as
+                the attendee.
+              </p>
+            )}
+            {startTime >= endTime && (
+              <p className="text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-sm">
+                The end time must be later than the start time.
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={onFindAvailability}
+                disabled={!canSearch}
+              >
+                {isLoadingAvailability ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Checking calendars
+                  </>
+                ) : (
+                  <>
+                    <Clock3 className="h-3.5 w-3.5" />
+                    Find available times
+                  </>
+                )}
+              </Button>
+            </div>
+            {availabilityError && (
+              <p className="text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-sm">
+                {availabilityError}
+              </p>
+            )}
+            {availability && (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Available times</h3>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    {availability.attendeeAvailability === "unknown"
+                      ? "Only your calendar could be checked."
+                      : "These times are free on both calendars."}
+                  </p>
+                </div>
+                {availability.warnings.map((warning) => (
+                  <div
+                    key={warning}
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
+                  >
+                    {warning}
+                  </div>
+                ))}
+                {availability.slots.length > 0 ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {availability.slots.map((slot) => {
+                      const isSelected =
+                        selectedSlot?.start === slot.start &&
+                        selectedSlot?.end === slot.end;
+                      return (
+                        <button
+                          key={`${slot.start}-${slot.end}`}
+                          type="button"
+                          onClick={() => onSelectSlot(slot)}
+                          className={cn(
+                            "flex items-center justify-between rounded-lg border px-3 py-3 text-left text-sm transition-colors",
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "hover:bg-muted/60",
+                          )}
+                        >
+                          {formatMeetingTime(slot.start)} –{" "}
+                          {formatMeetingTime(slot.end)}
+                          {isSelected && <Check className="h-4 w-4" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed px-4 py-8 text-center">
+                    <p className="text-sm font-medium">
+                      No matching time slots
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Try a wider time window or a different date.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+            {sendError && (
+              <p className="text-destructive border-destructive/30 bg-destructive/5 rounded-lg border px-3 py-2 text-sm">
+                {sendError}
+              </p>
+            )}
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t px-5 py-3"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="button" onClick={onCreateMeeting} disabled={!selectedSlot || isSending}>{isSending ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Sending invite</> : <><CalendarDays className="h-3.5 w-3.5" />Create & send invite</>}</Button></div>
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={onCreateMeeting}
+            disabled={!selectedSlot || isSending}
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Sending invite
+              </>
+            ) : (
+              <>
+                <CalendarDays className="h-3.5 w-3.5" />
+                Create & send invite
+              </>
+            )}
+          </Button>
+        </div>
       </section>
     </div>
   );
@@ -1357,7 +1644,7 @@ function RecipientField({
     <div className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2">
       <span className="text-muted-foreground text-xs font-medium">To</span>
       <Input
-        type="text"
+        type="email"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="name@example.com"
