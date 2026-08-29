@@ -245,12 +245,12 @@ export function CalendarPanel({
             <h2 className="font-heading text-base font-semibold">Calendar</h2>
 
             <p className="text-muted-foreground text-xs">
-              {week.start.toLocaleDateString(undefined, {
+              {week.start.toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
               })}{" "}
               -{" "}
-              {week.end.toLocaleDateString(undefined, {
+              {week.end.toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
               })}
