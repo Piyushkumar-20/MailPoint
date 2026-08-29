@@ -93,7 +93,7 @@ function groupEventsByDay(events: CalendarEvent[]) {
 function extractAttendeeEmails(attendees: string[]) {
   return attendees
     .map((attendee) => {
-      const emailMatch = attendee.match(/<([^>]+)>/);
+      const emailMatch = /<([^>]+)>/.exec(attendee);
 
       return emailMatch?.[1] ?? attendee;
     })
