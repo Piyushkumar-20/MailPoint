@@ -9,6 +9,8 @@ import {
   Check,
   Clock3,
   Loader2,
+  Mail,
+  MailOpen,
   Users,
   Eraser,
   Italic,
@@ -278,12 +280,10 @@ export function GmailPanel({
         },
       );
     },
-
     onSuccess: async () => {
       await utils.gmail.searchEmails.invalidate();
       await utils.gmail.getMessage.invalidate();
     },
-
     onError: async () => {
       await utils.gmail.searchEmails.invalidate();
     },
@@ -468,6 +468,18 @@ export function GmailPanel({
     openComposer("forward");
   };
 
+  const handleForwardFromList = async (messageId: string) => {
+    try {
+      const email = await utils.gmail.getMessage.fetch({ id: messageId });
+
+      if (!email) return;
+
+      openForward(email);
+    } catch {
+      // The existing message view will surface fetch errors if the message cannot be opened.
+    }
+  };
+
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
   const createScheduledMeeting = () => {
     if (!selectedMeetingSlot || !selectedEmail.data || !scheduleAttendee)
@@ -620,6 +632,28 @@ export function GmailPanel({
                     });
                   }}
                   onDelete={(messageId) => deleteMessage.mutate({ messageId })}
+                  onReply={openReply}
+                  onForwardRequest={handleForwardFromList}
+                  onToggleRead={(email) => {
+                    const isUnread = email.labelIds.includes("UNREAD");
+
+                    modifyMessageLabels.mutate({
+                      messageId: email.id,
+                      ...(isUnread
+                        ? { removeLabelIds: ["UNREAD"] }
+                        : { addLabelIds: ["UNREAD"] }),
+                    });
+                  }}
+                  onToggleStar={(email) => {
+                    const isStarred = email.labelIds.includes("STARRED");
+
+                    modifyMessageLabels.mutate({
+                      messageId: email.id,
+                      ...(isStarred
+                        ? { removeLabelIds: ["STARRED"] }
+                        : { addLabelIds: ["STARRED"] }),
+                    });
+                  }}
                   isDeleting={deleteMessage.isPending}
                 />
               )}
@@ -765,6 +799,10 @@ function MailList({
   selectedId,
   onSelect,
   onDelete,
+  onReply,
+  onForwardRequest,
+  onToggleRead,
+  onToggleStar,
   isDeleting,
 }: {
   emails:
@@ -782,8 +820,32 @@ function MailList({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onReply: (email: { from: string; subject: string }) => void;
+  onForwardRequest: (messageId: string) => void;
+  onToggleRead: (email: { id: string; labelIds: string[] }) => void;
+  onToggleStar: (email: { id: string; labelIds: string[] }) => void;
   isDeleting: boolean;
 }) {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    emailId: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const closeMenu = () => setContextMenu(null);
+
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu]);
+
   if (isLoading) return <StatusLine>Loading mail...</StatusLine>;
   if (error) return <StatusLine tone="error">{error}</StatusLine>;
 
@@ -796,13 +858,30 @@ function MailList({
     );
   }
 
+  const contextEmail = contextMenu
+    ? emails.find((email) => email.id === contextMenu.emailId)
+    : undefined;
+
   return (
-    <ul>
-      {emails.map((email) => {
+    <>
+      <ul>
+        {emails.map((email) => {
         const isUnread = email.labelIds.includes("UNREAD");
 
         return (
-          <li key={email.id} className="border-b">
+          <li
+            key={email.id}
+            className="border-b"
+            onContextMenu={(event) => {
+              event.preventDefault();
+
+              setContextMenu({
+                x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+                y: Math.max(8, Math.min(event.clientY, window.innerHeight - 260)),
+                emailId: email.id,
+              });
+            }}
+          >
             <div
               className={cn(
                 "group hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
@@ -820,8 +899,8 @@ function MailList({
                     className={cn(
                       "block truncate text-sm",
                       isUnread
-                        ? "text-foreground font-semibold"
-                        : "text-foreground font-normal",
+                        ? "font-semibold text-foreground"
+                        : "font-normal text-foreground",
                     )}
                   >
                     {email.from ? formatSender(email.from) : "Unknown sender"}
@@ -831,8 +910,8 @@ function MailList({
                     className={cn(
                       "mt-0.5 block truncate text-sm",
                       isUnread
-                        ? "text-foreground font-semibold"
-                        : "text-muted-foreground font-normal",
+                        ? "font-semibold text-foreground"
+                        : "font-normal text-muted-foreground",
                     )}
                   >
                     {email.subject || "(no subject)"}
@@ -852,7 +931,7 @@ function MailList({
                     className={cn(
                       "pt-0.5 text-xs",
                       isUnread
-                        ? "text-foreground font-semibold"
+                        ? "font-semibold text-foreground"
                         : "text-muted-foreground",
                     )}
                   >
@@ -867,7 +946,12 @@ function MailList({
                   className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
                   aria-label="Delete email"
                   title="Delete email"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
+
+                    const confirmed = window.confirm("Move this email to Trash?");
+                    if (!confirmed) return;
+
                     onDelete(email.id);
                   }}
                   disabled={isDeleting}
@@ -879,7 +963,133 @@ function MailList({
           </li>
         );
       })}
-    </ul>
+
+      </ul>
+
+      {contextEmail && contextMenu && (
+        <div
+          className="bg-popover text-popover-foreground border-border fixed z-50 min-w-52 rounded-md border p-1 shadow-lg"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <ContextMenuAction
+            icon={<MailOpen className="h-4 w-4" />}
+            label="Open"
+            onClick={() => {
+              setContextMenu(null);
+              onSelect(contextEmail.id);
+            }}
+          />
+
+          <ContextMenuAction
+            icon={<ReplyIcon className="h-4 w-4" />}
+            label="Reply"
+            onClick={() => {
+              setContextMenu(null);
+              onReply({
+                from: contextEmail.from,
+                subject: contextEmail.subject,
+              });
+            }}
+          />
+
+          <ContextMenuAction
+            icon={<ForwardIcon className="h-4 w-4" />}
+            label="Forward"
+            onClick={() => {
+              setContextMenu(null);
+              onForwardRequest(contextEmail.id);
+            }}
+          />
+
+          <div className="bg-border my-1 h-px" />
+
+          <ContextMenuAction
+            icon={
+              contextEmail.labelIds.includes("UNREAD") ? (
+                <MailOpen className="h-4 w-4" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )
+            }
+            label={
+              contextEmail.labelIds.includes("UNREAD")
+                ? "Mark as read"
+                : "Mark as unread"
+            }
+            onClick={() => {
+              setContextMenu(null);
+              onToggleRead(contextEmail);
+            }}
+          />
+
+          <ContextMenuAction
+            icon={
+              <Star
+                className={cn(
+                  "h-4 w-4",
+                  contextEmail.labelIds.includes("STARRED") &&
+                    "fill-primary text-primary",
+                )}
+              />
+            }
+            label={
+              contextEmail.labelIds.includes("STARRED")
+                ? "Unstar"
+                : "Star"
+            }
+            onClick={() => {
+              setContextMenu(null);
+              onToggleStar(contextEmail);
+            }}
+          />
+
+          <div className="bg-border my-1 h-px" />
+
+          <ContextMenuAction
+            icon={<Trash2 className="h-4 w-4" />}
+            label="Delete"
+            destructive
+            onClick={() => {
+              setContextMenu(null);
+
+              const confirmed = window.confirm("Move this email to Trash?");
+              if (!confirmed) return;
+
+              onDelete(contextEmail.id);
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function ContextMenuAction({
+  icon,
+  label,
+  onClick,
+  destructive = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors",
+        "hover:bg-muted",
+        destructive ? "text-destructive" : "text-foreground",
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }
 
