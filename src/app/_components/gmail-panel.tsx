@@ -95,10 +95,17 @@ function formatMeetingTime(value: string) {
 export function GmailPanel({
   view,
   searchQuery,
+  calendarComposeRequest,
 }: {
   view: "inbox" | "starred" | "drafts" | "sent";
   /** The active (submitted) search query, controlled by the header search box. */
   searchQuery: string;
+  calendarComposeRequest?: {
+    to: string;
+    subject: string;
+    body: string;
+    requestId: number;
+  } | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composerMode, setComposerMode] = useState<ComposerMode | null>(null);
@@ -345,6 +352,19 @@ export function GmailPanel({
     setComposerMode(mode);
     setComposerMinimized(false);
   };
+
+  useEffect(() => {
+    if (!calendarComposeRequest) return;
+  
+    setTo(calendarComposeRequest.to);
+    setCc("");
+    setBcc("");
+    setSubject(calendarComposeRequest.subject);
+    setBody(calendarComposeRequest.body);
+    setComposerMode("compose");
+    setComposerMinimized(false);
+    setComposerExpanded(false);
+  }, [calendarComposeRequest]);
 
   const closeComposer = () => {
     setComposerMode(null);
@@ -1337,7 +1357,7 @@ function RecipientField({
     <div className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2">
       <span className="text-muted-foreground text-xs font-medium">To</span>
       <Input
-        type="email"
+        type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="name@example.com"

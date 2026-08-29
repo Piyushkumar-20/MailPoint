@@ -16,6 +16,18 @@ const paginationSchema = z.object({
 });
 
 const optionalRecipientListSchema = z.string().trim().optional();
+const requiredRecipientListSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(
+    (value) =>
+      value
+        .split(",")
+        .map((email) => email.trim())
+        .every((email) => z.string().email().safeParse(email).success),
+    "Invalid email address",
+  );
 
 function messageTimestamp(
   internalDate?: string | null,
@@ -219,7 +231,7 @@ export const gmailRouter = createTRPCRouter({
   createDraft: protectedProcedure
     .input(
       z.object({
-        to: z.string().email(),
+        to: requiredRecipientListSchema,
         cc: optionalRecipientListSchema,
         bcc: optionalRecipientListSchema,
         subject: z.string().min(1),
@@ -299,7 +311,7 @@ export const gmailRouter = createTRPCRouter({
   sendEmail: protectedProcedure
     .input(
       z.object({
-        to: z.string().email(),
+        to: requiredRecipientListSchema,
         cc: optionalRecipientListSchema,
         bcc: optionalRecipientListSchema,
         subject: z.string().min(1),

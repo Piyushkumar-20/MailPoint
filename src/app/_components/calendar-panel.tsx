@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import {
   CalendarPlus,
+  Mail,
   MapPin,
   Pencil,
   RefreshCw,
   Search,
   Users,
 } from "lucide-react";
-
+import { useEffect, useMemo, useState } from "react";
 import { formatAttendees, formatEventWhen, LinkifiedText } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { getWeekBounds } from "@/lib/week";
@@ -42,7 +42,7 @@ function toDatetimeLocalFromIso(value: string) {
   return toDatetimeLocalValue(date);
 }
 
-type CalendarEvent = {
+export type CalendarEvent = {
   id: string;
   summary: string;
   description: string;
@@ -104,11 +104,14 @@ function extractAttendeeEmails(attendees: string[]) {
 export function CalendarPanel({
   weekOffset,
   focusCreateSignal,
+  onEmailAttendees,
 }: {
   /** Which week to show, relative to the current week (0 = this week). Controlled by the header nav. */
   weekOffset: number;
   /** Bump this number to open the create-event sheet from the header button. */
   focusCreateSignal: number;
+  /** Opens the Gmail composer with the event attendees and context. */
+  onEmailAttendees: (event: CalendarEvent) => void;
 }) {
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
@@ -383,6 +386,7 @@ export function CalendarPanel({
                             key={event.id}
                             event={event}
                             onEdit={() => openEditEvent(event)}
+                            onEmailAttendees={() => onEmailAttendees(event)}
                           />
                         ))}
                       </ul>
@@ -616,9 +620,11 @@ export function CalendarPanel({
 function EventRow({
   event,
   onEdit,
+  onEmailAttendees,
 }: {
   event: CalendarEvent;
   onEdit: () => void;
+  onEmailAttendees: () => void;
 }) {
   return (
     <li className="group bg-background hover:bg-card rounded-lg border p-4 transition-colors">
@@ -663,17 +669,33 @@ function EventRow({
           )}
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onEdit}
-          aria-label="Edit event"
-          title="Edit event"
-          className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100"
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          {event.attendees.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onEmailAttendees}
+              aria-label="Email attendees"
+              title="Email attendees"
+              className="opacity-70 transition-opacity group-hover:opacity-100"
+            >
+              <Mail className="h-4 w-4" />
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onEdit}
+            aria-label="Edit event"
+            title="Edit event"
+            className="opacity-70 transition-opacity group-hover:opacity-100"
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </li>
   );

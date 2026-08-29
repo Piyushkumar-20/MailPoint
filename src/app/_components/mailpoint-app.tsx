@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
-import { CalendarPanel } from "@/app/_components/calendar-panel";
+import {
+  CalendarPanel,
+  type CalendarEvent,
+} from "@/app/_components/calendar-panel";
 import { DashboardOverview } from "@/app/_components/dashboard-overview";
 import { GmailPanel } from "@/app/_components/gmail-panel";
 import { IntegrationsPanel } from "@/app/_components/integrations-panel";
@@ -94,9 +97,50 @@ export function MailPointApp({
   // CalendarPanel without changing its internal query logic.
   const [weekOffset, setWeekOffset] = useState(0);
   const [focusCreateSignal, setFocusCreateSignal] = useState(0);
+  const [calendarComposeRequest, setCalendarComposeRequest] = useState<{
+    to: string;
+    subject: string;
+    body: string;
+    requestId: number;
+  } | null>(null);
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
   const weekLabel = formatWeekLabel(week.start, week.end);
+  const handleEmailAttendees = (event: CalendarEvent) => {
+    const attendees = event.attendees
+      .map((attendee) => {
+        const match = /<([^>]+)>/.exec(attendee);
+        return match?.[1] ?? attendee;
+      })
+      .map((email) => email.trim())
+      .filter(Boolean);
 
+    if (attendees.length === 0) return;
+
+    setCalendarComposeRequest({
+      to: attendees.join(", "),
+      subject: event.summary
+        ? `Regarding: ${event.summary}`
+        : "Regarding your calendar event",
+      body: [
+        "Hi,",
+        "",
+        `I’m reaching out regarding "${event.summary || "our calendar event"}".`,
+        "",
+        event.start
+          ? `Scheduled for: ${new Date(event.start).toLocaleString()}`
+          : "",
+        event.location ? `Location: ${event.location}` : "",
+        "",
+        "Best,",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      requestId: Date.now(),
+    });
+
+    setActiveSection("inbox");
+    window.history.pushState({}, "", "/mail/inbox");
+  };
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
@@ -173,12 +217,17 @@ export function MailPointApp({
             activeSection === "starred" ||
             activeSection === "sent" ||
             activeSection === "drafts") && (
-            <GmailPanel view={activeSection} searchQuery={activeMailSearch} />
+            <GmailPanel
+              view={activeSection}
+              searchQuery={activeMailSearch}
+              calendarComposeRequest={calendarComposeRequest}
+            />
           )}
           {activeSection === "calendar" && (
             <CalendarPanel
               weekOffset={weekOffset}
               focusCreateSignal={focusCreateSignal}
+              onEmailAttendees={handleEmailAttendees}
             />
           )}
           {activeSection === "settings" && (
@@ -188,9 +237,7 @@ export function MailPointApp({
               isSigningOut={isSigningOut}
             />
           )}
-          {activeSection === "integrations" && (
-            <IntegrationsPanel />
-          )}
+          {activeSection === "integrations" && <IntegrationsPanel />}
         </main>
       </div>
     </div>
