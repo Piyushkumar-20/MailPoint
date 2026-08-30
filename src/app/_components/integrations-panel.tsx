@@ -38,7 +38,11 @@ const INTEGRATIONS: {
   },
 ];
 
-function statusCopy(state: string | undefined, loading: boolean, error: boolean) {
+function statusCopy(
+  state: string | undefined,
+  loading: boolean,
+  error: boolean,
+) {
   if (loading) return "Checking";
   if (error) return "Connection issue";
   if (state === "connected") return "Connected";
@@ -46,7 +50,11 @@ function statusCopy(state: string | undefined, loading: boolean, error: boolean)
   return "Not connected";
 }
 
-function statusTone(state: string | undefined, loading: boolean, error: boolean) {
+function statusTone(
+  state: string | undefined,
+  loading: boolean,
+  error: boolean,
+) {
   if (loading) return "neutral";
   if (error || state !== "connected") return "error";
   return "success";
@@ -64,7 +72,7 @@ function StatusBadge({
   const tone = statusTone(state, loading, error);
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs text-muted-foreground">
+    <span className="text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs">
       <span
         className={cn(
           "size-2 rounded-full",
@@ -80,24 +88,30 @@ function StatusBadge({
 
 export function IntegrationsPanel() {
   const connections = api.gmail.checkConnection.useQuery();
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
 
-  const connectGoogle = async () => {
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState<PluginKey | null>(null);
+
+  const connectGoogle = async (plugin: PluginKey) => {
     try {
       setConnectError(null);
-      setIsConnecting(true);
+      setIsConnecting(plugin);
 
-      const response = await fetch("/api/corsair/connect", {
-        method: "GET",
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/corsair/connect?plugin=${encodeURIComponent(plugin)}`,
+        {
+          method: "GET",
+          credentials: "include",
+        },
+      );
 
       if (!response.ok) {
         throw new Error("Failed to create Google connection");
       }
 
-      const data = (await response.json()) as { connectUrl?: string };
+      const data = (await response.json()) as {
+        connectUrl?: string;
+      };
 
       if (!data.connectUrl) {
         throw new Error("Corsair did not return a connection URL");
@@ -105,7 +119,7 @@ export function IntegrationsPanel() {
 
       window.location.href = data.connectUrl;
     } catch (error) {
-      setIsConnecting(false);
+      setIsConnecting(null);
       setConnectError(
         error instanceof Error ? error.message : "Failed to connect Google",
       );
@@ -116,20 +130,24 @@ export function IntegrationsPanel() {
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 md:px-6">
       <section>
         <h1 className="font-heading text-2xl font-semibold">Integrations</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+
+        <p className="text-muted-foreground mt-1 text-sm">
           Review the Google services available inside your MailPoint workspace.
         </p>
       </section>
 
-      <div className="rounded-lg border bg-card">
+      <div className="bg-card rounded-lg border">
         <div className="border-b px-4 py-3">
           <p className="text-sm font-medium">
-            {INTEGRATIONS.filter(
-              (item) => connections.data?.[item.plugin] === "connected",
-            ).length}{" "}
+            {
+              INTEGRATIONS.filter(
+                (item) => connections.data?.[item.plugin] === "connected",
+              ).length
+            }{" "}
             successful connections
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+
+          <p className="text-muted-foreground mt-0.5 text-xs">
             Status comes from the existing Corsair connection check.
           </p>
         </div>
@@ -144,15 +162,15 @@ export function IntegrationsPanel() {
               state={connections.data?.[integration.plugin]}
               loading={connections.isLoading}
               error={Boolean(connections.error)}
-              isConnecting={isConnecting}
-              onConnect={connectGoogle}
+              isConnecting={isConnecting === integration.plugin}
+              onConnect={() => connectGoogle(integration.plugin)}
             />
           ))}
         </div>
       </div>
 
       {(connections.error ?? connectError) && (
-        <p className="text-sm text-destructive">
+        <p className="text-destructive text-sm">
           {connectError ?? connections.error?.message}
         </p>
       )}
@@ -185,33 +203,40 @@ function IntegrationCard({
     <Card className="rounded-none border-0 bg-transparent shadow-none ring-0">
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <div className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-lg">
             <Icon className="size-5" />
           </div>
+
           <div>
             <CardTitle>{title}</CardTitle>
             <CardDescription>{description}</CardDescription>
           </div>
         </div>
+
         <CardAction>
           <StatusBadge state={state} loading={loading} error={error} />
         </CardAction>
       </CardHeader>
+
       <CardContent>
         <dl className="space-y-3 border-y py-4 text-sm">
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Connected Google account</dt>
-            <dd className="truncate text-right text-muted-foreground">
+
+            <dd className="text-muted-foreground truncate text-right">
               Unavailable
             </dd>
           </div>
+
           <div className="flex justify-between gap-4">
             <dt className="text-muted-foreground">Connection state</dt>
+
             <dd className="truncate text-right">
               {statusCopy(state, loading, error)}
             </dd>
           </div>
         </dl>
+
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             type="button"
@@ -222,6 +247,7 @@ function IntegrationCard({
             {isConnecting ? (
               <RefreshCw className="size-3.5 animate-spin" />
             ) : null}
+
             {connected ? "Reconnect" : "Connect"}
           </Button>
         </div>
