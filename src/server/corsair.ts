@@ -11,6 +11,7 @@ export const corsair = createCorsair({
   hub: {
     projectApiKey: process.env.CORSAIR_DEV_API_KEY!,
     signingSecret: process.env.CORSAIR_DEV_SIGNING_SECRET!,
+    allowWorkflowExecution: true,
   },
 
   plugins: [gmail(), googlecalendar()],
