@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   CalendarDays,
+  Bot,
   ChevronsLeft,
   ChevronsRight,
   Home,
@@ -28,6 +29,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export type AppSection =
   | "overview"
+  | "agent"
   | "inbox"
   | "starred"
   | "drafts"
@@ -57,6 +59,7 @@ const MAIL_ITEMS: NavItem[] = [
 
 const DASHBOARD_ITEMS: NavItem[] = [
   { section: "overview", label: "Overview", icon: Home },
+  { section: "agent", label: "MailPoint AI", icon: Bot },
 ];
 
 const CALENDAR_ITEMS: NavItem[] = [
@@ -180,6 +183,7 @@ function SidebarBody({
   onNavigate,
   collapsed,
   onCollapsedChange,
+  onFooterHeightChange,
   user,
   onSignOut,
   isSigningOut,
@@ -189,11 +193,45 @@ function SidebarBody({
   onNavigate: (section: AppSection) => void;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  onFooterHeightChange?: (height: number) => void;
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
   showCollapseToggle: boolean;
 }) {
+  const footerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useLayoutEffect(() => {
+    if (!showCollapseToggle || !onFooterHeightChange) return;
+
+    const footer = footerRef.current;
+
+    if (!footer) return;
+
+    const updateFooterHeight = () => {
+      const height = Math.ceil(footer.getBoundingClientRect().height);
+
+      if (height > 0) {
+        onFooterHeightChange(height);
+      }
+    };
+
+    updateFooterHeight();
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateFooterHeight);
+
+    resizeObserver?.observe(footer);
+    window.addEventListener("resize", updateFooterHeight);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateFooterHeight);
+    };
+  }, [onFooterHeightChange, showCollapseToggle]);
+
   return (
     <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
       <div
@@ -241,7 +279,7 @@ function SidebarBody({
         />
       </div>
 
-      <div className="border-sidebar-border shrink-0 border-t p-2">
+      <div ref={footerRef} className="border-sidebar-border shrink-0 border-t p-2">
         <AccountMenu
           user={user}
           onSignOut={onSignOut}
@@ -304,6 +342,7 @@ export function AppSidebar({
   onNavigate,
   collapsed,
   onCollapsedChange,
+  onDesktopFooterHeightChange,
   user,
   onSignOut,
   isSigningOut,
@@ -314,6 +353,7 @@ export function AppSidebar({
   onNavigate: (section: AppSection) => void;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  onDesktopFooterHeightChange?: (height: number) => void;
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
@@ -334,6 +374,7 @@ export function AppSidebar({
           onNavigate={onNavigate}
           collapsed={collapsed}
           onCollapsedChange={onCollapsedChange}
+          onFooterHeightChange={onDesktopFooterHeightChange}
           user={user}
           onSignOut={onSignOut}
           isSigningOut={isSigningOut}
@@ -352,6 +393,7 @@ export function AppSidebar({
             }}
             collapsed={false}
             onCollapsedChange={() => undefined}
+            onFooterHeightChange={undefined}
             user={user}
             onSignOut={onSignOut}
             isSigningOut={isSigningOut}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
+import { AgentPanel } from "@/app/_components/agent/agent-panel";
 import {
   CalendarPanel,
   type CalendarEvent,
@@ -14,10 +15,12 @@ import { GmailPanel } from "@/app/_components/gmail-panel";
 import { IntegrationsPanel } from "@/app/_components/integrations-panel";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { cn } from "@/lib/utils";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
 
 const SECTION_PATHS: Record<AppSection, string> = {
   overview: "/dashboard",
+  agent: "/agent",
   inbox: "/mail/inbox",
   starred: "/mail/starred",
   drafts: "/mail/drafts",
@@ -86,6 +89,9 @@ export function MailPointApp({
   const [activeSection, setActiveSection] =
     useState<AppSection>(initialSection);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarFooterHeight, setSidebarFooterHeight] = useState<number | null>(
+    null,
+  );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -108,18 +114,16 @@ export function MailPointApp({
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
-  
-      const section = (
-        Object.entries(SECTION_PATHS).find(
-          ([, sectionPath]) => sectionPath === path,
-        )?.[0] ?? "overview"
-      ) as AppSection;
-  
+
+      const section = (Object.entries(SECTION_PATHS).find(
+        ([, sectionPath]) => sectionPath === path,
+      )?.[0] ?? "overview") as AppSection;
+
       setActiveSection(section);
     };
-  
+
     window.addEventListener("popstate", handlePopState);
-  
+
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
@@ -187,6 +191,7 @@ export function MailPointApp({
         onNavigate={handleNavigate}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
+        onDesktopFooterHeightChange={setSidebarFooterHeight}
         user={user}
         onSignOut={handleSignOut}
         isSigningOut={isSigningOut}
@@ -229,12 +234,20 @@ export function MailPointApp({
           }
         />
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main
+          className={cn(
+            "min-h-0 flex-1",
+            activeSection === "agent" ? "overflow-hidden" : "overflow-y-auto",
+          )}
+        >
           {activeSection === "overview" && (
             <DashboardOverview
               userName={user?.name}
               onNavigate={handleNavigate}
             />
+          )}
+          {activeSection === "agent" && (
+            <AgentPanel footerMinHeight={sidebarFooterHeight} />
           )}
           {(activeSection === "inbox" ||
             activeSection === "starred" ||
