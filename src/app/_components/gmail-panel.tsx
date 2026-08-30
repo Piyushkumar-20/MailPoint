@@ -108,6 +108,7 @@ export function GmailPanel({
   } | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<ComposerMode | null>(null);
   const [composerMinimized, setComposerMinimized] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
@@ -350,6 +351,100 @@ export function GmailPanel({
        * If Gmail rejects the delete, refetch the list so the removed
        * message comes back.
        */
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+  // Bulk delete selected messages
+  const deleteMessages = api.gmail.deleteMessages.useMutation({
+    onMutate: async ({ messageIds }) => {
+      await utils.gmail.searchEmails.cancel();
+  
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+  
+          return current.filter(
+            (email) => !messageIds.includes(email.id),
+          );
+        },
+      );
+  
+      setSelectedIds((current) =>
+        current.filter((id) => !messageIds.includes(id)),
+      );
+    },
+  
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+    },
+  
+    onError: async () => {
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+//Bulk read/unread + star/unstar
+  const modifyMessagesLabels =
+  api.gmail.modifyMessagesLabels.useMutation({
+    onMutate: async ({
+      messageIds,
+      addLabelIds,
+      removeLabelIds,
+    }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+
+          return current.map((email) => {
+            if (!messageIds.includes(email.id)) {
+              return email;
+            }
+
+            let labelIds = [...email.labelIds];
+
+            if (addLabelIds) {
+              labelIds = Array.from(
+                new Set([...labelIds, ...addLabelIds]),
+              );
+            }
+
+            if (removeLabelIds) {
+              labelIds = labelIds.filter(
+                (labelId) => !removeLabelIds.includes(labelId),
+              );
+            }
+
+            return {
+              ...email,
+              labelIds,
+            };
+          });
+        },
+      );
+    },
+
+    onSuccess: () => {
+      // onMutate already updates the visible mail list optimistically.
+      // Avoid invalidating here because it causes an unnecessary
+      // refetch and introduces a 2-4 second UI delay.
+    },
+
+    onError: async () => {
+      // Synchronize with Gmail only when the mutation fails.
       await utils.gmail.searchEmails.invalidate();
     },
   });
@@ -624,6 +719,8 @@ export function GmailPanel({
                   isLoading={emails.isLoading}
                   error={emails.error?.message}
                   selectedId={selectedId}
+                  selectedIds={selectedIds}
+                  onSelectionChange={setSelectedIds}
                   onSelect={(messageId) => {
                     setSelectedId(messageId);
                     markAsRead.mutate({
@@ -654,7 +751,58 @@ export function GmailPanel({
                         : { addLabelIds: ["STARRED"] }),
                     });
                   }}
-                  isDeleting={deleteMessage.isPending}
+                  onBulkDelete={() => {
+                    if (selectedIds.length === 0) return;
+
+                    const confirmed = window.confirm(
+                      `Move ${selectedIds.length} selected email${selectedIds.length === 1 ? "" : "s"} to Trash?`,
+                    );
+                    if (!confirmed) return;
+
+                    deleteMessages.mutate({ messageIds: selectedIds });
+                  }}
+                  onBulkToggleRead={() => {
+                    if (selectedIds.length === 0) return;
+
+                    const selectedEmails =
+                      emails.data?.filter((email) =>
+                        selectedIds.includes(email.id),
+                      ) ?? [];
+
+                    const hasUnread = selectedEmails.some((email) =>
+                      email.labelIds.includes("UNREAD"),
+                    );
+
+                    modifyMessagesLabels.mutate({
+                      messageIds: selectedIds,
+                      ...(hasUnread
+                        ? { removeLabelIds: ["UNREAD"] }
+                        : { addLabelIds: ["UNREAD"] }),
+                    });
+                  }}
+                  onBulkToggleStar={() => {
+                    if (selectedIds.length === 0) return;
+
+                    const selectedEmails =
+                      emails.data?.filter((email) =>
+                        selectedIds.includes(email.id),
+                      ) ?? [];
+
+                    const hasUnstarred = selectedEmails.some(
+                      (email) => !email.labelIds.includes("STARRED"),
+                    );
+
+                    modifyMessagesLabels.mutate({
+                      messageIds: selectedIds,
+                      ...(hasUnstarred
+                        ? { addLabelIds: ["STARRED"] }
+                        : { removeLabelIds: ["STARRED"] }),
+                    });
+                  }}
+                  isDeleting={
+                    deleteMessage.isPending || deleteMessages.isPending
+                  }
+                  isBulkActionPending={modifyMessagesLabels.isPending}
                 />
               )}
 
@@ -797,13 +945,19 @@ function MailList({
   isLoading,
   error,
   selectedId,
+  selectedIds,
+  onSelectionChange,
   onSelect,
   onDelete,
   onReply,
+  onBulkDelete,
+  onBulkToggleRead,
+  onBulkToggleStar,
   onForwardRequest,
   onToggleRead,
   onToggleStar,
   isDeleting,
+  isBulkActionPending,
 }: {
   emails:
     | {
@@ -818,13 +972,19 @@ function MailList({
   isLoading: boolean;
   error?: string;
   selectedId: string | null;
+  selectedIds: string[];
+  onSelectionChange: (ids: string[]) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onReply: (email: { from: string; subject: string }) => void;
+  onBulkDelete: () => void;
+  onBulkToggleRead: () => void;
+  onBulkToggleStar: () => void;
   onForwardRequest: (messageId: string) => void;
   onToggleRead: (email: { id: string; labelIds: string[] }) => void;
   onToggleStar: (email: { id: string; labelIds: string[] }) => void;
   isDeleting: boolean;
+  isBulkActionPending: boolean;
 }) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -862,108 +1022,259 @@ function MailList({
     ? emails.find((email) => email.id === contextMenu.emailId)
     : undefined;
 
+  const allSelected =
+    emails.length > 0 && selectedIds.length === emails.length;
+
+  const hasSelection = selectedIds.length > 0;
+
+  const selectedEmails = emails.filter((email) =>
+    selectedIds.includes(email.id),
+  );
+
+  const allSelectedUnread =
+    hasSelection &&
+    selectedEmails.every((email) => email.labelIds.includes("UNREAD"));
+
+  const allSelectedStarred =
+    hasSelection &&
+    selectedEmails.every((email) => email.labelIds.includes("STARRED"));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      onSelectionChange([]);
+      return;
+    }
+
+    onSelectionChange(emails.map((email) => email.id));
+  };
+
+  const toggleSelection = (messageId: string) => {
+    if (selectedIds.includes(messageId)) {
+      onSelectionChange(
+        selectedIds.filter((id) => id !== messageId),
+      );
+      return;
+    }
+
+    onSelectionChange([...selectedIds, messageId]);
+  };
+
   return (
     <>
+      <div className="bg-background sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b px-4 py-2">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={toggleSelectAll}
+          aria-label="Select all emails"
+          className="h-4 w-4 accent-primary"
+        />
+
+        {hasSelection ? (
+          <>
+            <span className="text-muted-foreground ml-1 text-xs font-medium">
+              {selectedIds.length} selected
+            </span>
+
+            <div className="bg-border mx-1 h-5 w-px" />
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onBulkToggleRead}
+              disabled={isBulkActionPending}
+              title={allSelectedUnread ? "Mark as read" : "Mark as unread"}
+              aria-label={allSelectedUnread ? "Mark as read" : "Mark as unread"}
+              className="h-8 gap-1.5"
+            >
+              {allSelectedUnread ? (
+                <MailOpen className="h-3.5 w-3.5" />
+              ) : (
+                <Mail className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {allSelectedUnread ? "Mark read" : "Mark unread"}
+              </span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onBulkToggleStar}
+              disabled={isBulkActionPending}
+              title={allSelectedStarred ? "Unstar" : "Star"}
+              aria-label={allSelectedStarred ? "Unstar" : "Star"}
+              className="h-8 gap-1.5"
+            >
+              <Star
+                className={cn(
+                  "h-3.5 w-3.5",
+                  allSelectedStarred && "fill-primary text-primary",
+                )}
+              />
+              <span className="hidden sm:inline">
+                {allSelectedStarred ? "Unstar" : "Star"}
+              </span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onBulkDelete}
+              disabled={isDeleting}
+              title="Delete selected emails"
+              aria-label="Delete selected emails"
+              className="text-muted-foreground hover:text-destructive h-8 gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Delete</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onSelectionChange([])}
+              title="Clear selection"
+              aria-label="Clear selection"
+              className="ml-auto h-8 gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Clear</span>
+            </Button>
+          </>
+        ) : (
+          <span className="text-muted-foreground text-xs">
+            Select all
+          </span>
+        )}
+      </div>
+
       <ul>
         {emails.map((email) => {
-        const isUnread = email.labelIds.includes("UNREAD");
+          const isUnread = email.labelIds.includes("UNREAD");
+          const isSelected = selectedIds.includes(email.id);
 
-        return (
-          <li
-            key={email.id}
-            className="border-b"
-            onContextMenu={(event) => {
-              event.preventDefault();
+          return (
+            <li
+              key={email.id}
+              className="border-b"
+              onContextMenu={(event) => {
+                event.preventDefault();
 
-              setContextMenu({
-                x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
-                y: Math.max(8, Math.min(event.clientY, window.innerHeight - 260)),
-                emailId: email.id,
-              });
-            }}
-          >
-            <div
-              className={cn(
-                "group hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
-                isUnread && "bg-muted/40",
-                selectedId === email.id && "bg-accent",
-              )}
+                setContextMenu({
+                  x: Math.max(
+                    8,
+                    Math.min(event.clientX, window.innerWidth - 220),
+                  ),
+                  y: Math.max(
+                    8,
+                    Math.min(event.clientY, window.innerHeight - 260),
+                  ),
+                  emailId: email.id,
+                });
+              }}
             >
-              <button
-                type="button"
-                onClick={() => onSelect(email.id)}
-                className="min-w-0 text-left"
+              <div
+                className={cn(
+                  "group hover:bg-muted/60 grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
+                  isUnread && "bg-muted/40",
+                  isSelected && "bg-accent/60",
+                  selectedId === email.id && "bg-accent",
+                )}
               >
-                <span className="min-w-0">
-                  <span
-                    className={cn(
-                      "block truncate text-sm",
-                      isUnread
-                        ? "font-semibold text-foreground"
-                        : "font-normal text-foreground",
-                    )}
-                  >
-                    {email.from ? formatSender(email.from) : "Unknown sender"}
-                  </span>
+                <div className="flex items-start pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelection(email.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`Select ${email.subject || "email"}`}
+                    className="h-4 w-4 accent-primary"
+                  />
+                </div>
 
-                  <span
-                    className={cn(
-                      "mt-0.5 block truncate text-sm",
-                      isUnread
-                        ? "font-semibold text-foreground"
-                        : "font-normal text-muted-foreground",
-                    )}
-                  >
-                    {email.subject || "(no subject)"}
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => onSelect(email.id)}
+                  className="min-w-0 text-left"
+                >
+                  <span className="min-w-0">
+                    <span
+                      className={cn(
+                        "block truncate text-sm",
+                        isUnread
+                          ? "font-semibold text-foreground"
+                          : "font-normal text-foreground",
+                      )}
+                    >
+                      {email.from
+                        ? formatSender(email.from)
+                        : "Unknown sender"}
+                    </span>
 
-                  {email.snippet && (
-                    <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                      {email.snippet}
+                    <span
+                      className={cn(
+                        "mt-0.5 block truncate text-sm",
+                        isUnread
+                          ? "font-semibold text-foreground"
+                          : "font-normal text-muted-foreground",
+                      )}
+                    >
+                      {email.subject || "(no subject)"}
+                    </span>
+
+                    {email.snippet && (
+                      <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                        {email.snippet}
+                      </span>
+                    )}
+                  </span>
+                </button>
+
+                <div className="flex shrink-0 items-start gap-2">
+                  {email.date && (
+                    <span
+                      className={cn(
+                        "pt-0.5 text-xs",
+                        isUnread
+                          ? "font-semibold text-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {formatMessageDate(email.date)}
                     </span>
                   )}
-                </span>
-              </button>
 
-              <div className="flex shrink-0 items-start gap-2">
-                {email.date && (
-                  <span
-                    className={cn(
-                      "pt-0.5 text-xs",
-                      isUnread
-                        ? "font-semibold text-foreground"
-                        : "text-muted-foreground",
-                    )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-label="Delete email"
+                    title="Delete email"
+                    onClick={(event) => {
+                      event.stopPropagation();
+
+                      const confirmed = window.confirm(
+                        "Move this email to Trash?",
+                      );
+                      if (!confirmed) return;
+
+                      onDelete(email.id);
+                    }}
+                    disabled={isDeleting}
                   >
-                    {formatMessageDate(email.date)}
-                  </span>
-                )}
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                  aria-label="Delete email"
-                  title="Delete email"
-                  onClick={(event) => {
-                    event.stopPropagation();
-
-                    const confirmed = window.confirm("Move this email to Trash?");
-                    if (!confirmed) return;
-
-                    onDelete(email.id);
-                  }}
-                  disabled={isDeleting}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          </li>
-        );
-      })}
-
+            </li>
+          );
+        })}
       </ul>
 
       {contextEmail && contextMenu && (

@@ -308,6 +308,28 @@ export const gmailRouter = createTRPCRouter({
       };
     }),
 
+    deleteMessages: protectedProcedure
+    .input(
+      z.object({
+        messageIds: z.array(z.string().min(1)).min(1).max(100),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await Promise.all(
+        input.messageIds.map((messageId) =>
+          tenant.gmail.api.messages.trash({
+            id: messageId,
+          }),
+        ),
+      );
+
+      return {
+        ids: input.messageIds,
+      };
+    }),
+
   sendEmail: protectedProcedure
     .input(
       z.object({
@@ -387,6 +409,35 @@ export const gmailRouter = createTRPCRouter({
         id: message.id ?? input.messageId,
         threadId: message.threadId ?? "",
         labelIds: message.labelIds ?? [],
+      };
+    }),
+
+    modifyMessagesLabels: protectedProcedure
+    .input(
+      z.object({
+        messageIds: z.array(z.string().min(1)).min(1).max(100),
+        addLabelIds: z.array(z.string()).optional(),
+        removeLabelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const messages = await Promise.all(
+        input.messageIds.map((messageId) =>
+          tenant.gmail.api.messages.modify({
+            id: messageId,
+            addLabelIds: input.addLabelIds,
+            removeLabelIds: input.removeLabelIds,
+          }),
+        ),
+      );
+
+      return {
+        messages: messages.map((message, index) => ({
+          id: message.id ?? input.messageIds[index],
+          labelIds: message.labelIds ?? [],
+        })),
       };
     }),
 });
