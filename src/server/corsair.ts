@@ -14,6 +14,18 @@ export const corsair = createCorsair({
     allowWorkflowExecution: true,
   },
 
-  plugins: [gmail(), googlecalendar()],
+  plugins: [
+    gmail({
+      permissions: {
+        mode: "strict",
+      },
+    }),
+    googlecalendar({
+      permissions: {
+        mode: "strict",
+      },
+    }),
+  ],
+
   multiTenancy: true,
 });

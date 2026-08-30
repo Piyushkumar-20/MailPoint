@@ -15,27 +15,18 @@ export async function POST(request: Request) {
     });
 
     if (!session?.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = (await request.json()) as AgentRequestBody;
 
     if (typeof body.input !== "string" || !body.input.trim()) {
-      return NextResponse.json(
-        { error: "input is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "input is required" }, { status: 400 });
     }
 
     const corsair = await getTenant(session.user.id);
 
-    const result = await runMailPointAgent(
-      corsair,
-      body.input.trim(),
-    );
+    const result = await runMailPointAgent(corsair, body.input.trim());
 
     return NextResponse.json({
       output: result.finalOutput,
