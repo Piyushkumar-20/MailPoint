@@ -96,7 +96,7 @@ export function createMailPointAgent(
         },
       ];
 
-      for (let iteration = 0; iteration < 10; iteration++) {
+      for (let iteration = 0; iteration < 5; iteration++) {
         const response = await ai.models.generateContent({
           model: MODEL,
           contents,
@@ -131,18 +131,6 @@ Keep responses concise and useful.
         if (!candidate?.content) {
           throw new Error("Gemini returned no response.");
         }
-
-        /*
-         * IMPORTANT:
-         *
-         * Preserve Gemini's complete model Content object.
-         *
-         * Do NOT reconstruct functionCall parts manually.
-         *
-         * Gemini 3 attaches thoughtSignature to functionCall
-         * parts and requires that signature to be returned
-         * unchanged on the next request.
-         */
         const modelContent = candidate.content;
 
         contents.push(modelContent);
