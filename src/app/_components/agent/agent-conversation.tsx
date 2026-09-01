@@ -11,10 +11,16 @@ export function AgentConversation({
   messages,
   isLoading,
   onSuggestion,
+  pendingConfirmationId,
+  onConfirmCalendar,
+  onCancelCalendar,
 }: {
   messages: Message[];
   isLoading: boolean;
   onSuggestion: (prompt: string) => void;
+  pendingConfirmationId: string | null;
+  onConfirmCalendar: (message: Message) => void;
+  onCancelCalendar: (message: Message) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -34,7 +40,13 @@ export function AgentConversation({
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         {messages.map((message) => (
-          <AgentMessage key={message.id} message={message} />
+          <AgentMessage
+            key={message.id}
+            message={message}
+            confirmationBusy={pendingConfirmationId === message.id}
+            onConfirmCalendar={() => onConfirmCalendar(message)}
+            onCancelCalendar={() => onCancelCalendar(message)}
+          />
         ))}
 
         {isLoading && <AgentLoading />}

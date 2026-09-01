@@ -2,7 +2,10 @@
 
 import { useCallback, useState } from "react";
 
-import { postAgentRequest } from "@/lib/agent-client";
+import {
+  confirmCalendarAction,
+  postAgentRequest,
+} from "@/lib/agent-client";
 
 import type { Message } from "@/app/_components/agent/types";
 
@@ -11,16 +14,11 @@ import { AgentConversation } from "@/app/_components/agent/agent-conversation";
 import { AgentHeader } from "@/app/_components/agent/agent-header";
 
 function createMessageId() {
-  if (
-    typeof crypto !== "undefined" &&
-    "randomUUID" in crypto
-  ) {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
 
-  return `${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function AgentPanel({
@@ -28,14 +26,11 @@ export function AgentPanel({
 }: {
   footerMinHeight?: number | null;
 }) {
-  const [messages, setMessages] =
-    useState<Message[]>([]);
-
-  const [composerValue, setComposerValue] =
-    useState("");
-
-  const [isLoading, setIsLoading] =
-    useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [composerValue, setComposerValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingConfirmationId, setPendingConfirmationId] =
+    useState<string | null>(null);
 
   const sendMessage = useCallback(
     async (rawInput: string) => {
@@ -55,20 +50,12 @@ export function AgentPanel({
         ...currentMessages,
         userMessage,
       ]);
-
       setComposerValue("");
       setIsLoading(true);
 
       try {
-        const timezone =
-          Intl.DateTimeFormat().resolvedOptions()
-            .timeZone;
-
-        const response =
-          await postAgentRequest(
-            input,
-            timezone,
-          );
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const response = await postAgentRequest(input, timezone);
 
         setMessages((currentMessages) => [
           ...currentMessages,
@@ -76,8 +63,13 @@ export function AgentPanel({
             id: createMessageId(),
             role: "assistant",
             content: response.output,
-            confirmation: response.confirmation ?? undefined,
-          }
+            confirmation: response.confirmation
+              ? {
+                  ...response.confirmation,
+                  status: "pending",
+                }
+              : undefined,
+          },
         ]);
       } catch (error) {
         setMessages((currentMessages) => [
@@ -98,11 +90,120 @@ export function AgentPanel({
     [isLoading],
   );
 
+  const confirmCalendarMessage = useCallback(
+    async (message: Message) => {
+      const confirmation = message.confirmation;
+
+      if (
+        !confirmation ||
+        confirmation.type !== "calendar_event" ||
+        (confirmation.status !== "pending" &&
+          confirmation.status !== "approval_required") ||
+        pendingConfirmationId
+      ) {
+        return;
+      }
+
+      setPendingConfirmationId(message.id);
+
+      try {
+        const result = await confirmCalendarAction(confirmation.token);
+
+        if (result.status === "approval_required") {
+          setMessages((currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === message.id
+                ? {
+                    ...currentMessage,
+                    content: result.output,
+                    confirmation: {
+                      ...confirmation,
+                      status: "approval_required",
+                      approvalUrl: result.approvalUrl,
+                    },
+                  }
+                : currentMessage,
+            ),
+          );
+
+          return;
+        }
+
+        setMessages((currentMessages) =>
+          currentMessages.map((currentMessage) =>
+            currentMessage.id === message.id
+              ? {
+                  ...currentMessage,
+                  content: result.output,
+                  confirmation: {
+                    ...confirmation,
+                    status: "confirmed",
+                    approvalUrl: undefined,
+                    result: {
+                      eventId: result.event.id,
+                      htmlLink: result.event.htmlLink,
+                    },
+                    error: undefined,
+                  },
+                }
+              : currentMessage,
+          ),
+        );
+      } catch (error) {
+        setMessages((currentMessages) =>
+          currentMessages.map((currentMessage) =>
+            currentMessage.id === message.id
+              ? {
+                  ...currentMessage,
+                  confirmation: {
+                    ...confirmation,
+                    status: "error",
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "MailPoint couldn't confirm that calendar action.",
+                  },
+                }
+              : currentMessage,
+          ),
+        );
+      } finally {
+        setPendingConfirmationId(null);
+      }
+    },
+    [pendingConfirmationId],
+  );
+
+  const cancelCalendarMessage = useCallback(
+    (message: Message) => {
+      const confirmation = message.confirmation;
+
+      if (
+        confirmation?.status !== "pending" ||
+        pendingConfirmationId
+      ) {
+        return;
+      }
+
+      setMessages((currentMessages) =>
+        currentMessages.map((currentMessage) =>
+          currentMessage.id === message.id
+            ? {
+                ...currentMessage,
+                confirmation: {
+                  ...confirmation,
+                  status: "cancelled",
+                },
+              }
+            : currentMessage,
+        ),
+      );
+    },
+    [pendingConfirmationId],
+  );
+
   const handleNewConversation = () => {
-    if (
-      messages.length === 0 ||
-      isLoading
-    ) {
+    if (messages.length === 0 || isLoading) {
       return;
     }
 
@@ -121,25 +222,23 @@ export function AgentPanel({
       <AgentHeader
         hasMessages={messages.length > 0}
         isLoading={isLoading}
-        onNewConversation={
-          handleNewConversation
-        }
+        onNewConversation={handleNewConversation}
       />
 
       <AgentConversation
         messages={messages}
         isLoading={isLoading}
         onSuggestion={sendMessage}
+        pendingConfirmationId={pendingConfirmationId}
+        onConfirmCalendar={confirmCalendarMessage}
+        onCancelCalendar={cancelCalendarMessage}
       />
 
       <div
         className="bg-background/95 border-t pt-3"
         style={
           footerMinHeight
-            ? {
-                minBlockSize:
-                  footerMinHeight,
-              }
+            ? { minBlockSize: footerMinHeight }
             : undefined
         }
       >
@@ -147,9 +246,7 @@ export function AgentPanel({
           value={composerValue}
           onChange={setComposerValue}
           onSubmit={() => {
-            void sendMessage(
-              composerValue,
-            );
+            void sendMessage(composerValue);
           }}
           disabled={isLoading}
         />

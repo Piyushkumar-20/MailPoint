@@ -3,6 +3,12 @@ import {
   buildCorsairToolDefs,
   type CorsairToolDef,
 } from "@corsair-dev/mcp";
+import { z } from "zod";
+
+import {
+  calendarActionProposalSchema,
+  type CalendarActionProposal,
+} from "@/lib/agent-types";
 
 const MODEL = "openai/gpt-oss-120b";
 const MAX_ITERATIONS = 4;
@@ -35,14 +41,6 @@ type GroqMessage =
       content: string;
     };
 
-export type CalendarActionProposal = {
-  type: "calendar_event";
-  summary: string;
-  start: string;
-  end: string;
-  attendees: string[];
-};
-
 export type AgentContext = {
   timezone: string;
   currentDateTime: string;
@@ -60,14 +58,28 @@ type MailPointTool = {
   execute: (args: Record<string, unknown>) => Promise<string>;
 };
 
+const toolArgumentsSchema = z.record(z.string(), z.unknown());
+
+type CorsairHandlerResult = Awaited<
+  ReturnType<CorsairToolDef["handler"]>
+>;
+type CorsairContentItem = CorsairHandlerResult["content"][number];
+type CorsairTextContentItem = Extract<
+  CorsairContentItem,
+  { type: "text" }
+>;
+
+function isCorsairTextContentItem(
+  item: CorsairContentItem,
+): item is CorsairTextContentItem {
+  return item.type === "text";
+}
+
 function getTextFromCorsairResult(
-  result: Awaited<ReturnType<CorsairToolDef["handler"]>>,
+  result: CorsairHandlerResult,
 ): string {
   return result.content
-    .filter(
-      (item): item is Extract<typeof item, { type: "text" }> =>
-        item.type === "text",
-    )
+    .filter(isCorsairTextContentItem)
     .map((item) => item.text)
     .join("\n");
 }
@@ -353,58 +365,16 @@ function createToolExecutor(tools: MailPointTool[]) {
 function parseCalendarActionProposal(
   result: string,
 ): CalendarActionProposal {
-  let parsed: unknown;
+  const calendarProposalResultSchema = z.object({
+    status: z.literal("confirmation_required"),
+    action: calendarActionProposalSchema,
+  });
 
   try {
-    parsed = JSON.parse(result);
+    return calendarProposalResultSchema.parse(JSON.parse(result)).action;
   } catch {
     throw new Error("Calendar action proposal was invalid.");
   }
-
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    Array.isArray(parsed)
-  ) {
-    throw new Error("Calendar action proposal was invalid.");
-  }
-
-  const candidate = parsed as {
-    status?: unknown;
-    action?: unknown;
-  };
-
-  if (
-    candidate.status !== "confirmation_required" ||
-    typeof candidate.action !== "object" ||
-    candidate.action === null ||
-    Array.isArray(candidate.action)
-  ) {
-    throw new Error("Calendar action proposal was invalid.");
-  }
-
-  const action = candidate.action as Record<string, unknown>;
-
-  if (
-    action.type !== "calendar_event" ||
-    typeof action.summary !== "string" ||
-    typeof action.start !== "string" ||
-    typeof action.end !== "string" ||
-    !Array.isArray(action.attendees) ||
-    !action.attendees.every(
-      (attendee): attendee is string => typeof attendee === "string",
-    )
-  ) {
-    throw new Error("Calendar action proposal was invalid.");
-  }
-
-  return {
-    type: "calendar_event",
-    summary: action.summary,
-    start: action.start,
-    end: action.end,
-    attendees: action.attendees,
-  };
 }
 
 export function createMailPointAgent(
@@ -580,11 +550,9 @@ Keep the final response concise and useful.
             continue;
           }
 
-          if (
-            typeof parsed !== "object" ||
-            parsed === null ||
-            Array.isArray(parsed)
-          ) {
+          const args = toolArgumentsSchema.safeParse(parsed);
+
+          if (!args.success) {
             messages.push({
               role: "tool",
               tool_call_id: toolCall.id,
@@ -596,10 +564,8 @@ Keep the final response concise and useful.
             continue;
           }
 
-          const args = parsed as Record<string, unknown>;
-
           try {
-            const result = await executeTool(toolName, args);
+            const result = await executeTool(toolName, args.data);
 
             if (toolName === "propose_calendar_event") {
               const proposal = parseCalendarActionProposal(result);

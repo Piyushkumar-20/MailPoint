@@ -83,6 +83,9 @@ importers:
       next:
         specifier: ^15.2.3
         version: 15.5.19(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      next-app:
+        specifier: ^0.0.0
+        version: 0.0.0
       next-theme:
         specifier: ^0.1.5
         version: 0.1.5(next@15.5.19(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -4033,6 +4036,9 @@ packages:
   negotiator@1.1.0:
     resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
     engines: {node: '>=18'}
+
+  next-app@0.0.0:
+    resolution: {integrity: sha512-vBpHtHZ8mzS+Ul90YVXYBdbBU3v5Ej//Vap8MVCzVBIreHQmaeT60kvqwJVZQ+reFSmU18fAhvC0xMkafWn//Q==}
 
   next-theme@0.1.5:
     resolution: {integrity: sha512-WR8UCLEFjWvRl+UO2lTM4pGo7R4jzGZqQ6YL3hiL1Ns587Qb91GhJZLPu/Aa4ExtGQ/5wlcDX8zDYZoCN9oDPw==}
@@ -9202,6 +9208,8 @@ snapshots:
   negotiator@1.1.0:
     dependencies:
       content-type: 2.1.0
+
+  next-app@0.0.0: {}
 
   next-theme@0.1.5(next@15.5.19(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:

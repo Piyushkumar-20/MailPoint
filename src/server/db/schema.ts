@@ -70,6 +70,24 @@ export const corsairEvents = pgTable("corsair_events", {
   status: text("status"),
 });
 
+export const corsairPermissions = pgTable("corsair_permissions", {
+  id: text("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  token: text("token").notNull(),
+  plugin: text("plugin").notNull(),
+  endpoint: text("endpoint").notNull(),
+  args: text("args").notNull(),
+  tenantId: text("tenant_id"),
+  status: text("status").notNull().default("pending"),
+  expiresAt: text("expires_at").notNull(),
+  error: text("error"),
+});
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -172,10 +190,7 @@ export const account = pgTable(
   },
   (table) => [
     index("account_userId_idx").on(table.userId),
-    unique("account_issuer_accountId_uidx").on(
-      table.issuer,
-      table.accountId,
-    ),
+    unique("account_issuer_accountId_uidx").on(table.issuer, table.accountId),
   ],
 );
 

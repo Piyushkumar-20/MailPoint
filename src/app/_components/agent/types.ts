@@ -1,3 +1,5 @@
+import type { AgentConfirmation } from "@/lib/agent-types";
+
 export type AgentMessageRole = "user" | "assistant";
 
 export type Message = {
@@ -5,18 +7,4 @@ export type Message = {
   role: AgentMessageRole;
   content: string;
   confirmation?: AgentConfirmation;
-};
-
-
-export type CalendarActionProposal = {
-  type: "calendar_event";
-  summary: string;
-  start: string;
-  end: string;
-  attendees: string[];
-};
-
-export type AgentConfirmation = {
-  type: "calendar_event";
-  action: CalendarActionProposal;
 };

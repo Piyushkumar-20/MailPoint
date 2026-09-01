@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { runMailPointAgent } from "@/server/agent/agent";
+import { createCalendarConfirmationToken } from "@/server/agent/calendar-confirmation";
 import { auth } from "@/server/lib/auth";
-import { getTenant } from "@/server/lib/tenant";
+import { getTenant, getTenantId } from "@/server/lib/tenant";
 
 type AgentRequestBody = {
   input?: unknown;
@@ -16,19 +17,12 @@ export async function POST(request: Request) {
     });
 
     if (!session?.user) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body =
-      (await request.json()) as AgentRequestBody;
+    const body = (await request.json()) as AgentRequestBody;
 
-    if (
-      typeof body.input !== "string" ||
-      !body.input.trim()
-    ) {
+    if (typeof body.input !== "string" || !body.input.trim()) {
       return NextResponse.json(
         { error: "input is required" },
         { status: 400 },
@@ -36,48 +30,44 @@ export async function POST(request: Request) {
     }
 
     const timezone =
-      typeof body.timezone === "string" &&
-      body.timezone.trim()
+      typeof body.timezone === "string" && body.timezone.trim()
         ? body.timezone.trim()
         : "UTC";
 
-    let currentDateTime: string;
-
-    try {
-      currentDateTime = new Intl.DateTimeFormat(
-        "en-US",
-        {
-          dateStyle: "full",
-          timeStyle: "long",
-          timeZone: timezone,
-        },
-      ).format(new Date());
-    } catch {
-      return NextResponse.json(
-        { error: "Invalid timezone." },
-        { status: 400 },
-      );
-    }
-
     const corsair = await getTenant(session.user.id);
+    const tenantId = await getTenantId(session.user.id);
+
+    const now = new Date();
 
     const result = await runMailPointAgent(
       corsair,
       body.input.trim(),
       {
         timezone,
-        currentDateTime,
+        currentDateTime: new Intl.DateTimeFormat("en-US", {
+          dateStyle: "full",
+          timeStyle: "long",
+          timeZone: timezone,
+        }).format(now),
       },
     );
 
+    const confirmation = result.calendarActionProposal
+      ? {
+          type: "calendar_event" as const,
+          token: await createCalendarConfirmationToken({
+            userId: session.user.id,
+            tenantId,
+            action: result.calendarActionProposal,
+          }),
+          action: result.calendarActionProposal,
+          status: "pending" as const,
+        }
+      : null;
+
     return NextResponse.json({
       output: result.finalOutput,
-      confirmation: result.calendarActionProposal
-        ? {
-            type: "calendar_event",
-            action: result.calendarActionProposal,
-          }
-        : null,
+      confirmation,
     });
   } catch (error) {
     console.error("[Agent API]", error);

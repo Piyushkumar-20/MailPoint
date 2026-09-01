@@ -4,7 +4,7 @@ import { db } from "@/server/db";
 import { tenant, tenantMembers } from "@/server/db/schema";
 import { corsair } from "@/server/corsair";
 
-export async function getTenant(userId: string) {
+export async function getTenantId(userId: string) {
   const membership = await db.query.tenantMembers.findFirst({
     where: eq(tenantMembers.userId, userId),
   });
@@ -23,7 +23,9 @@ export async function getTenant(userId: string) {
     });
   }
 
-  const resolvedTenantId = membership?.tenantId ?? userId;
+  return membership?.tenantId ?? userId;
+}
 
-  return corsair.withTenant(resolvedTenantId);
+export async function getTenant(userId: string) {
+  return corsair.withTenant(await getTenantId(userId));
 }

@@ -43,6 +43,13 @@
       "when": 1787584121008,
       "tag": "0005_wonderful_killraven",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788271427224,
+      "tag": "0006_wet_newton_destine",
+      "breakpoints": true
     }
   ]
 }
