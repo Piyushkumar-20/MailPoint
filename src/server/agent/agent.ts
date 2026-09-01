@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
-import { buildCorsairToolDefs, type CorsairToolDef } from "@corsair-dev/mcp";
+import { type buildCorsairToolDefs } from "@corsair-dev/mcp";
+import { createAgentRunScriptExecutor } from "./mcp";
 
 const MODEL = "openai/gpt-oss-120b";
 const MAX_ITERATIONS = 4;
@@ -43,48 +44,8 @@ type MailPointTool = {
   execute: (args: Record<string, unknown>) => Promise<string>;
 };
 
-function getTextFromCorsairResult(
-  result: Awaited<ReturnType<CorsairToolDef["handler"]>>,
-): string {
-  return result.content
-    .filter(
-      (item): item is Extract<typeof item, { type: "text" }> =>
-        item.type === "text",
-    )
-    .map((item) => item.text)
-    .join("\n");
-}
-
-function createRunScriptExecutor(corsair: MailPointCorsair) {
-  const definitions = buildCorsairToolDefs({
-    corsair,
-  });
-
-  const runScriptDefinition = definitions.find(
-    (definition) => definition.name === "run_script",
-  );
-
-  if (!runScriptDefinition) {
-    throw new Error("Corsair run_script tool is unavailable.");
-  }
-
-  return async (code: string): Promise<string> => {
-    const result = await runScriptDefinition.handler({
-      code,
-    });
-
-    const text = getTextFromCorsairResult(result);
-
-    if (result.isError) {
-      throw new Error(text || "Corsair run_script failed.");
-    }
-
-    return text;
-  };
-}
-
 function createMailPointTools(corsair: MailPointCorsair): MailPointTool[] {
-  const runScript = createRunScriptExecutor(corsair);
+  const runScript = createAgentRunScriptExecutor(corsair);
 
   return [
     {
@@ -330,11 +291,14 @@ IMPORTANT:
 5. Do not perform tool discovery.
 6. Do not repeatedly call the same tool with the same arguments.
 7. Use real tool results. Never invent email or calendar data.
-8. If the user asks about both Gmail and Calendar, use both
+8. Use only the tools required by the user’s request. If the request is
+   Gmail-only, do not call Calendar tools. If the request is
+   Calendar-only, do not call Gmail tools.
+9. If the user explicitly asks about both Gmail and Calendar, use both
    tools when necessary.
-9. After obtaining the requested information, provide the
-   answer instead of continuing to search.
-10. These tools are currently read-only.
+10. After obtaining the requested information, provide the answer
+    instead of continuing to search.
+11. These tools are currently read-only.
 
 For:
 
