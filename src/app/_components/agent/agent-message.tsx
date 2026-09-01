@@ -4,6 +4,17 @@ import { cn } from "@/lib/utils";
 import type { Message } from "@/app/_components/agent/types";
 import { AgentMarkdown } from "@/app/_components/agent/agent-markdown";
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export function AgentMessage({ message }: { message: Message }) {
   if (message.role === "user") {
     return (
@@ -30,6 +41,21 @@ export function AgentMessage({ message }: { message: Message }) {
           MailPoint AI
         </div>
         <AgentMarkdown content={message.content} />
+
+        {message.confirmation?.type === "calendar_event" && (
+          <div className="bg-muted/40 mt-3 rounded-md border p-3 text-sm">
+            <div className="font-medium">Calendar action requires confirmation</div>
+            <div className="mt-2 space-y-1 text-muted-foreground">
+              <div><span className="text-foreground">Title:</span> {message.confirmation.action.summary}</div>
+              <div><span className="text-foreground">Start:</span> {formatDateTime(message.confirmation.action.start)}</div>
+              <div><span className="text-foreground">End:</span> {formatDateTime(message.confirmation.action.end)}</div>
+              {message.confirmation.action.attendees.length > 0 && (
+                <div><span className="text-foreground">Attendees:</span> {message.confirmation.action.attendees.join(", ")}</div>
+              )}
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">No calendar changes have been made yet.</p>
+          </div>
+        )}
       </div>
     </div>
   );

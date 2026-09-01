@@ -1,11 +1,15 @@
 import Groq from "groq-sdk";
-import { type buildCorsairToolDefs } from "@corsair-dev/mcp";
-import { createAgentRunScriptExecutor } from "./mcp";
+import {
+  buildCorsairToolDefs,
+  type CorsairToolDef,
+} from "@corsair-dev/mcp";
 
 const MODEL = "openai/gpt-oss-120b";
 const MAX_ITERATIONS = 4;
 
-type MailPointCorsair = Parameters<typeof buildCorsairToolDefs>[0]["corsair"];
+type MailPointCorsair = Parameters<
+  typeof buildCorsairToolDefs
+>[0]["corsair"];
 
 type GroqToolCall = {
   id: string;
@@ -17,14 +21,8 @@ type GroqToolCall = {
 };
 
 type GroqMessage =
-  | {
-      role: "system";
-      content: string;
-    }
-  | {
-      role: "user";
-      content: string;
-    }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
   | {
       role: "assistant";
       content: string | null;
@@ -37,6 +35,24 @@ type GroqMessage =
       content: string;
     };
 
+export type CalendarActionProposal = {
+  type: "calendar_event";
+  summary: string;
+  start: string;
+  end: string;
+  attendees: string[];
+};
+
+export type AgentContext = {
+  timezone: string;
+  currentDateTime: string;
+};
+
+export type AgentRunResult = {
+  finalOutput: string;
+  calendarActionProposal?: CalendarActionProposal;
+};
+
 type MailPointTool = {
   name: string;
   description: string;
@@ -44,10 +60,107 @@ type MailPointTool = {
   execute: (args: Record<string, unknown>) => Promise<string>;
 };
 
+function getTextFromCorsairResult(
+  result: Awaited<ReturnType<CorsairToolDef["handler"]>>,
+): string {
+  return result.content
+    .filter(
+      (item): item is Extract<typeof item, { type: "text" }> =>
+        item.type === "text",
+    )
+    .map((item) => item.text)
+    .join("\n");
+}
+
+function createRunScriptExecutor(corsair: MailPointCorsair) {
+  const definitions = buildCorsairToolDefs({ corsair });
+  const runScriptDefinition = definitions.find(
+    (definition) => definition.name === "run_script",
+  );
+
+  if (!runScriptDefinition) {
+    throw new Error("Corsair run_script tool is unavailable.");
+  }
+
+  return async (code: string): Promise<string> => {
+    const result = await runScriptDefinition.handler({ code });
+    const text = getTextFromCorsairResult(result);
+
+    if (result.isError) {
+      throw new Error(text || "Corsair run_script failed.");
+    }
+
+    return text;
+  };
+}
+
 function createMailPointTools(corsair: MailPointCorsair): MailPointTool[] {
-  const runScript = createAgentRunScriptExecutor(corsair);
+  const runScript = createRunScriptExecutor(corsair);
 
   return [
+    {
+      name: "propose_calendar_event",
+      description:
+        "Prepare a Google Calendar event for the user to review. This tool NEVER creates, updates, or sends a calendar invitation. Use it when the user asks MailPoint to schedule or create a meeting. The server will return the proposal for explicit user confirmation.",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "Event title." },
+          start: {
+            type: "string",
+            description:
+              "Event start as an ISO 8601 date/time with timezone offset.",
+          },
+          end: {
+            type: "string",
+            description:
+              "Event end as an ISO 8601 date/time with timezone offset.",
+          },
+          attendees: {
+            type: "array",
+            items: { type: "string" },
+            description: "Attendee email addresses.",
+          },
+        },
+        required: ["summary", "start", "end", "attendees"],
+        additionalProperties: false,
+      },
+      execute: async (args) => {
+        const summary =
+          typeof args.summary === "string" ? args.summary.trim() : "";
+        const start =
+          typeof args.start === "string" ? args.start.trim() : "";
+        const end =
+          typeof args.end === "string" ? args.end.trim() : "";
+        const attendees = Array.isArray(args.attendees)
+          ? args.attendees
+              .filter(
+                (value): value is string =>
+                  typeof value === "string" && value.trim().length > 0,
+              )
+              .map((value) => value.trim())
+          : [];
+
+        if (!summary || !start || !end) {
+          throw new Error(
+            "Calendar proposal requires a summary, start time, and end time.",
+          );
+        }
+
+        const proposal: CalendarActionProposal = {
+          type: "calendar_event",
+          summary,
+          start,
+          end,
+          attendees,
+        };
+
+        return JSON.stringify({
+          status: "confirmation_required",
+          action: proposal,
+        });
+      },
+    },
     {
       name: "search_emails",
       description:
@@ -64,16 +177,16 @@ function createMailPointTools(corsair: MailPointCorsair): MailPointTool[] {
             type: "integer",
             minimum: 1,
             maximum: 10,
-            description: "Maximum number of messages to return. Default is 5.",
+            description:
+              "Maximum number of messages to return. Default is 5.",
           },
         },
         required: ["query"],
         additionalProperties: false,
       },
-
       execute: async (args) => {
-        const query = typeof args.query === "string" ? args.query.trim() : "";
-
+        const query =
+          typeof args.query === "string" ? args.query.trim() : "";
         const limit =
           typeof args.limit === "number"
             ? Math.min(Math.max(Math.floor(args.limit), 1), 10)
@@ -83,21 +196,17 @@ function createMailPointTools(corsair: MailPointCorsair): MailPointTool[] {
           throw new Error("Email search query is required.");
         }
 
-        const safeQuery = JSON.stringify(query);
-
         const code = `
 const result = await corsair.gmail.api.messages.list({
-  q: ${safeQuery},
+  q: ${JSON.stringify(query)},
   maxResults: ${limit}
 });
 
 return result;
 `;
-
         return runScript(code);
       },
     },
-
     {
       name: "get_email",
       description:
@@ -113,30 +222,27 @@ return result;
         required: ["messageId"],
         additionalProperties: false,
       },
-
       execute: async (args) => {
         const messageId =
-          typeof args.messageId === "string" ? args.messageId.trim() : "";
+          typeof args.messageId === "string"
+            ? args.messageId.trim()
+            : "";
 
         if (!messageId) {
           throw new Error("messageId is required.");
         }
 
-        const safeMessageId = JSON.stringify(messageId);
-
         const code = `
 const result = await corsair.gmail.api.messages.get({
-  id: ${safeMessageId},
+  id: ${JSON.stringify(messageId)},
   format: "full"
 });
 
 return result;
 `;
-
         return runScript(code);
       },
     },
-
     {
       name: "search_calendar_events",
       description:
@@ -163,16 +269,16 @@ return result;
             type: "integer",
             minimum: 1,
             maximum: 25,
-            description: "Maximum number of events to return. Default is 10.",
+            description:
+              "Maximum number of events to return. Default is 10.",
           },
         },
         required: ["query"],
         additionalProperties: false,
       },
-
       execute: async (args) => {
-        const query = typeof args.query === "string" ? args.query.trim() : "";
-
+        const query =
+          typeof args.query === "string" ? args.query.trim() : "";
         const limit =
           typeof args.limit === "number"
             ? Math.min(Math.max(Math.floor(args.limit), 1), 25)
@@ -183,11 +289,9 @@ return result;
         }
 
         const now = new Date();
-
         const defaultTimeMin = new Date(
           now.getTime() - 365 * 24 * 60 * 60 * 1000,
         ).toISOString();
-
         const defaultTimeMax = new Date(
           now.getTime() + 365 * 24 * 60 * 60 * 1000,
         ).toISOString();
@@ -196,30 +300,22 @@ return result;
           typeof args.timeMin === "string" && args.timeMin.trim()
             ? args.timeMin.trim()
             : defaultTimeMin;
-
         const timeMax =
           typeof args.timeMax === "string" && args.timeMax.trim()
             ? args.timeMax.trim()
             : defaultTimeMax;
 
-        const safeQuery = JSON.stringify(query);
-
-        const safeTimeMin = JSON.stringify(timeMin);
-
-        const safeTimeMax = JSON.stringify(timeMax);
-
         const code = `
 const result = await corsair.googlecalendar.api.events.getMany({
   calendarId: "primary",
-  timeMin: ${safeTimeMin},
-  timeMax: ${safeTimeMax},
-  q: ${safeQuery},
+  timeMin: ${JSON.stringify(timeMin)},
+  timeMax: ${JSON.stringify(timeMax)},
+  q: ${JSON.stringify(query)},
   maxResults: ${limit}
 });
 
 return result;
 `;
-
         return runScript(code);
       },
     },
@@ -254,33 +350,114 @@ function createToolExecutor(tools: MailPointTool[]) {
   };
 }
 
-export function createMailPointAgent(corsair: MailPointCorsair) {
+function parseCalendarActionProposal(
+  result: string,
+): CalendarActionProposal {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    throw new Error("Calendar action proposal was invalid.");
+  }
+
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error("Calendar action proposal was invalid.");
+  }
+
+  const candidate = parsed as {
+    status?: unknown;
+    action?: unknown;
+  };
+
+  if (
+    candidate.status !== "confirmation_required" ||
+    typeof candidate.action !== "object" ||
+    candidate.action === null ||
+    Array.isArray(candidate.action)
+  ) {
+    throw new Error("Calendar action proposal was invalid.");
+  }
+
+  const action = candidate.action as Record<string, unknown>;
+
+  if (
+    action.type !== "calendar_event" ||
+    typeof action.summary !== "string" ||
+    typeof action.start !== "string" ||
+    typeof action.end !== "string" ||
+    !Array.isArray(action.attendees) ||
+    !action.attendees.every(
+      (attendee): attendee is string => typeof attendee === "string",
+    )
+  ) {
+    throw new Error("Calendar action proposal was invalid.");
+  }
+
+  return {
+    type: "calendar_event",
+    summary: action.summary,
+    start: action.start,
+    end: action.end,
+    attendees: action.attendees,
+  };
+}
+
+export function createMailPointAgent(
+  corsair: MailPointCorsair,
+  context: AgentContext,
+) {
   const groq = new Groq({
     apiKey: process.env.GROQ_API_KEY,
   });
 
   const tools = createMailPointTools(corsair);
-
   const groqTools = createGroqToolDefinitions(tools);
-
   const executeTool = createToolExecutor(tools);
 
   return {
-    async run(input: string) {
+    async run(input: string): Promise<AgentRunResult> {
       const messages: GroqMessage[] = [
         {
           role: "system",
           content: `
 You are MailPoint AI.
 
-You help the authenticated user work with Gmail
-and Google Calendar.
+You help the authenticated user work with Gmail and Google Calendar.
+
+USER DATE/TIME CONTEXT:
+
+Current local date and time:
+${context.currentDateTime}
+
+User timezone:
+${context.timezone}
+
+DATE/TIME RULES:
+
+1. Interpret "today", "tomorrow", "yesterday", "next Monday",
+   and similar relative dates using the user's local date above.
+2. Interpret clock times such as "10 AM" and "3 PM" in the user's
+   timezone above.
+3. Do not interpret the user's requested local time as UTC.
+4. When creating a calendar proposal, convert the requested local
+   time into an ISO 8601 timestamp containing the correct timezone offset.
+5. If the user says "tomorrow at 10 AM", the start time MUST be exactly
+   10:00 AM tomorrow in the user's timezone.
+6. If the user does not specify a duration, use a one-hour duration.
+7. Never change the requested hour or minute unless the user explicitly
+   asks for a different time.
 
 AVAILABLE TOOLS:
 
 - search_emails
 - get_email
 - search_calendar_events
+- propose_calendar_event
 
 IMPORTANT:
 
@@ -291,19 +468,31 @@ IMPORTANT:
 5. Do not perform tool discovery.
 6. Do not repeatedly call the same tool with the same arguments.
 7. Use real tool results. Never invent email or calendar data.
-8. Use only the tools required by the user’s request. If the request is
-   Gmail-only, do not call Calendar tools. If the request is
-   Calendar-only, do not call Gmail tools.
-9. If the user explicitly asks about both Gmail and Calendar, use both
-   tools when necessary.
-10. After obtaining the requested information, provide the answer
-    instead of continuing to search.
-11. These tools are currently read-only.
+8. If the user asks about both Gmail and Calendar, use both tools when necessary.
+9. If the request is Gmail-only, do not call Calendar.
+10. If the request is Calendar-only, do not call Gmail.
+11. After obtaining the requested information, provide the answer instead of continuing to search.
+12. Gmail and Calendar search tools are read-only.
+13. propose_calendar_event is non-mutating.
+14. Never claim that a calendar event was created, updated, or sent unless
+    an execution tool actually performs that action.
+
+CALENDAR ACTIONS:
+
+When the user asks to create or schedule a calendar event:
+
+1. Understand the requested event details.
+2. If the attendee email address is known, use it.
+3. If required information is missing or ambiguous, ask the user for clarification.
+4. Use propose_calendar_event to prepare the event.
+5. Do not search Calendar unless the user asks to check availability or existing events.
+6. Do not claim that the event was created.
+7. Wait for explicit user confirmation before execution.
 
 For:
 
-"Find my latest email about Testing Phase 3 and check
-whether I have a calendar event related to it."
+"Find my latest email about Testing Phase 3 and check whether I have a
+calendar event related to it."
 
 Use this workflow:
 
@@ -325,7 +514,11 @@ Keep the final response concise and useful.
         },
       ];
 
-      for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      for (
+        let iteration = 0;
+        iteration < MAX_ITERATIONS;
+        iteration++
+      ) {
         const response = await groq.chat.completions.create({
           model: MODEL,
           messages,
@@ -364,12 +557,13 @@ Keep the final response concise and useful.
         });
 
         if (toolCalls.length === 0) {
-          return message.content ?? "";
+          return {
+            finalOutput: message.content ?? "",
+          };
         }
 
         for (const toolCall of toolCalls) {
           const toolName = toolCall.function.name;
-
           let parsed: unknown;
 
           try {
@@ -383,7 +577,6 @@ Keep the final response concise and useful.
                 error: "Invalid JSON arguments.",
               }),
             });
-
             continue;
           }
 
@@ -400,7 +593,6 @@ Keep the final response concise and useful.
                 error: "Tool arguments must be a JSON object.",
               }),
             });
-
             continue;
           }
 
@@ -408,6 +600,16 @@ Keep the final response concise and useful.
 
           try {
             const result = await executeTool(toolName, args);
+
+            if (toolName === "propose_calendar_event") {
+              const proposal = parseCalendarActionProposal(result);
+
+              return {
+                finalOutput:
+                  "I can prepare this calendar event for your review. Nothing has been created yet.",
+                calendarActionProposal: proposal,
+              };
+            }
 
             messages.push({
               role: "tool",
@@ -417,7 +619,9 @@ Keep the final response concise and useful.
             });
           } catch (error) {
             const errorMessage =
-              error instanceof Error ? error.message : "Tool execution failed.";
+              error instanceof Error
+                ? error.message
+                : "Tool execution failed.";
 
             messages.push({
               role: "tool",
@@ -441,12 +645,8 @@ Keep the final response concise and useful.
 export async function runMailPointAgent(
   corsair: MailPointCorsair,
   input: string,
-) {
-  const agent = createMailPointAgent(corsair);
-
-  const finalOutput = await agent.run(input);
-
-  return {
-    finalOutput,
-  };
+  context: AgentContext,
+): Promise<AgentRunResult> {
+  const agent = createMailPointAgent(corsair, context);
+  return agent.run(input);
 }

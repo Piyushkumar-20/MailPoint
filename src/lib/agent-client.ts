@@ -1,9 +1,24 @@
 export type AgentRequest = {
   input: string;
+  timezone: string;
+};
+
+export type CalendarActionProposal = {
+  type: "calendar_event";
+  summary: string;
+  start: string;
+  end: string;
+  attendees: string[];
+};
+
+export type AgentConfirmation = {
+  type: "calendar_event";
+  action: CalendarActionProposal;
 };
 
 export type AgentResponse = {
   output: string;
+  confirmation: AgentConfirmation | null;
 };
 
 export class AgentClientError extends Error {
@@ -32,16 +47,76 @@ function getAgentErrorMessage(status: number) {
   return "MailPoint couldn't process that request. Please try again.";
 }
 
-function isAgentResponse(value: unknown): value is AgentResponse {
+function isCalendarActionProposal(
+  value: unknown,
+): value is CalendarActionProposal {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const proposal = value as Record<string, unknown>;
+
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "output" in value &&
-    typeof value.output === "string"
+    proposal.type === "calendar_event" &&
+    typeof proposal.summary === "string" &&
+    typeof proposal.start === "string" &&
+    typeof proposal.end === "string" &&
+    Array.isArray(proposal.attendees) &&
+    proposal.attendees.every(
+      (attendee): attendee is string =>
+        typeof attendee === "string",
+    )
   );
 }
 
-export async function postAgentRequest(input: string): Promise<AgentResponse> {
+function isAgentConfirmation(
+  value: unknown,
+): value is AgentConfirmation {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const confirmation =
+    value as Record<string, unknown>;
+
+  return (
+    confirmation.type === "calendar_event" &&
+    isCalendarActionProposal(confirmation.action)
+  );
+}
+
+function isAgentResponse(
+  value: unknown,
+): value is AgentResponse {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const response = value as Record<string, unknown>;
+
+  return (
+    typeof response.output === "string" &&
+    (response.confirmation === null ||
+      isAgentConfirmation(response.confirmation))
+  );
+}
+
+export async function postAgentRequest(
+  input: string,
+  timezone: string,
+): Promise<AgentResponse> {
   let response: Response;
 
   try {
@@ -51,7 +126,10 @@ export async function postAgentRequest(input: string): Promise<AgentResponse> {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ input } satisfies AgentRequest),
+      body: JSON.stringify({
+        input,
+        timezone,
+      } satisfies AgentRequest),
     });
   } catch {
     throw new AgentClientError(
