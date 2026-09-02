@@ -11,14 +11,6 @@ import { corsair } from "@/server/corsair";
 import { auth } from "@/server/lib/auth";
 import { getTenant, getTenantId } from "@/server/lib/tenant";
 
-/*
- * Corsair exposes a dynamically typed client. Keep the SDK boundary
- * isolated here so the rest of the route remains type-safe.
- */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 const confirmRequestBodySchema = z.object({
   token: z.unknown().optional(),
 });
@@ -46,34 +38,32 @@ type ConfirmationOk = {
   payload: ConfirmationPayload;
 };
 
-function extractCorsairApprovalDetails(error: unknown): {
-  corsairPermissionToken: string;
-  approvalUrl: string;
-} | null {
+function extractCorsairApprovalUrl(error: unknown): string | null {
   const message = error instanceof Error ? error.message : "";
 
-  const approvalUrlMatch =
-    /https:\/\/hub\.corsair\.dev\/approve\/(\S+)/i.exec(message);
+  const approvalUrlMatch = /https:\/\/hub\.corsair\.dev\/approve\/\S+/i.exec(
+    message,
+  );
 
-  if (!approvalUrlMatch?.[1]) {
+  if (!approvalUrlMatch?.[0]) {
     return null;
   }
 
-  const encodedToken = approvalUrlMatch[1].replace(
-    /[),.]+$/,
-    "",
-  );
+  return approvalUrlMatch[0].replace(/[),.]+$/, "");
+}
 
-  const corsairPermissionToken = decodeURIComponent(
-    encodedToken,
-  );
+const confirmationCookieName = "mailpoint_calendar_confirmation";
 
-  const approvalUrl = `https://hub.corsair.dev/approve/${encodedToken}`;
-
-  return {
-    corsairPermissionToken,
-    approvalUrl,
-  };
+function setConfirmationCookie(response: NextResponse, token: string) {
+  response.cookies.set({
+    name: confirmationCookieName,
+    value: token,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 15,
+  });
 }
 
 function isApprovalRequiredError(error: unknown): boolean {
@@ -242,6 +232,17 @@ export async function POST(request: Request) {
      * execute the exact frozen operation after
      * the user has approved it in Corsair Hub.
      */
+    if (!payload.corsairPermissionToken && payload.approvalUrl) {
+      return NextResponse.json(
+        {
+          error:
+            "Corsair approval has not been linked to this confirmation yet. Complete the approval and retry.",
+          approvalUrl: payload.approvalUrl,
+        },
+        { status: 409 },
+      );
+    }
+
     if (payload.corsairPermissionToken) {
       const permissionResult = await executePermission(
         permissionExecutorCorsair,
@@ -278,11 +279,15 @@ export async function POST(request: Request) {
         token: confirmationToken,
       });
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         status: "confirmed",
         output: "Calendar event created.",
         event,
       });
+
+      response.cookies.delete(confirmationCookieName);
+
+      return response;
     }
 
     const tenant = await getTenant(session.user.id);
@@ -323,7 +328,7 @@ export async function POST(request: Request) {
         token: confirmationToken,
       });
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         status: "confirmed",
         output: "Calendar event created.",
         event: {
@@ -331,16 +336,20 @@ export async function POST(request: Request) {
           htmlLink: typeof event.htmlLink === "string" ? event.htmlLink : "",
         },
       });
+
+      response.cookies.delete(confirmationCookieName);
+
+      return response;
     } catch (error) {
       if (!isApprovalRequiredError(error)) {
         throw error;
       }
 
-      const details = extractCorsairApprovalDetails(error);
+      const approvalUrl = extractCorsairApprovalUrl(error);
 
-      if (!details) {
+      if (!approvalUrl) {
         console.error(
-          "[Agent Confirm API] Corsair requested approval but did not expose approval details.",
+          "[Agent Confirm API] Corsair requested approval but did not expose an approval URL.",
           error,
         );
 
@@ -352,12 +361,11 @@ export async function POST(request: Request) {
           { status: 502 },
         );
       }
-
       const updated = await updateCalendarConfirmationApproval({
         userId: session.user.id,
         token: confirmationToken,
-        corsairPermissionToken: details.corsairPermissionToken,
-        approvalUrl: details.approvalUrl,
+        corsairPermissionToken: "",
+        approvalUrl,
       });
 
       if (updated.status !== "ok") {
@@ -369,15 +377,18 @@ export async function POST(request: Request) {
         );
       }
 
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           status: "approval_required",
           output:
             "Calendar approval is required. Approve the action in Corsair, then retry the confirmation in MailPoint.",
-          approvalUrl: details.approvalUrl,
+          approvalUrl,
         },
         { status: 202 },
       );
+      setConfirmationCookie(response, confirmationToken);
+
+      return response;
     }
   } catch (error) {
     console.error("[Agent Confirm API]", error);

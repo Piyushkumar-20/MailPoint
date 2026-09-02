@@ -167,8 +167,8 @@ export async function updateCalendarConfirmationApproval({
 }: {
   userId: string;
   token: string;
-  corsairPermissionToken: string;
-  approvalUrl: string;
+  corsairPermissionToken?: string;
+  approvalUrl?: string;
 }) {
   const result = await getCalendarConfirmationRecord({ userId, token });
 
@@ -178,14 +178,18 @@ export async function updateCalendarConfirmationApproval({
 
   const payload = parsePayload(result.record.value);
 
-  if (!payload || payload.userId !== userId) {
+  if (payload && payload.userId !== userId) {
     return { status: "unauthorized" as const };
+  }
+
+  if (!payload) {
+    return { status: "invalid" as const };
   }
 
   const updatedPayload = calendarConfirmationPayloadSchema.parse({
     ...payload,
-    corsairPermissionToken,
-    approvalUrl,
+    ...(corsairPermissionToken !== undefined ? { corsairPermissionToken } : {}),
+    ...(approvalUrl !== undefined ? { approvalUrl } : {}),
   });
 
   await db
@@ -211,10 +215,5 @@ export async function deleteCalendarConfirmationToken({
 }) {
   await db
     .delete(verification)
-    .where(
-      eq(
-        verification.identifier,
-        getIdentifier(userId, token.trim()),
-      ),
-    );
+    .where(eq(verification.identifier, getIdentifier(userId, token.trim())));
 }
