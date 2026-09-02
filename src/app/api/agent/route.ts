@@ -1,14 +1,29 @@
 import { NextResponse } from "next/server";
 
 import { runMailPointAgent } from "@/server/agent/agent";
-import { createCalendarConfirmationToken } from "@/server/agent/calendar-confirmation";
 import { auth } from "@/server/lib/auth";
-import { getTenant, getTenantId } from "@/server/lib/tenant";
+import { getTenant } from "@/server/lib/tenant";
 
 type AgentRequestBody = {
   input?: unknown;
   timezone?: unknown;
 };
+
+function getCurrentDateTime(timezone: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      dateStyle: "full",
+      timeStyle: "long",
+      timeZone: timezone,
+    }).format(new Date());
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      dateStyle: "full",
+      timeStyle: "long",
+      timeZone: "UTC",
+    }).format(new Date());
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +32,10 @@ export async function POST(request: Request) {
     });
 
     if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 },
+      );
     }
 
     const body = (await request.json()) as AgentRequestBody;
@@ -35,46 +53,25 @@ export async function POST(request: Request) {
         : "UTC";
 
     const corsair = await getTenant(session.user.id);
-    const tenantId = await getTenantId(session.user.id);
-
-    const now = new Date();
 
     const result = await runMailPointAgent(
       corsair,
       body.input.trim(),
       {
         timezone,
-        currentDateTime: new Intl.DateTimeFormat("en-US", {
-          dateStyle: "full",
-          timeStyle: "long",
-          timeZone: timezone,
-        }).format(now),
+        currentDateTime: getCurrentDateTime(timezone),
       },
     );
 
-    const confirmation = result.calendarActionProposal
-      ? {
-          type: "calendar_event" as const,
-          token: await createCalendarConfirmationToken({
-            userId: session.user.id,
-            tenantId,
-            action: result.calendarActionProposal,
-          }),
-          action: result.calendarActionProposal,
-          status: "pending" as const,
-        }
-      : null;
-
     return NextResponse.json({
       output: result.finalOutput,
-      confirmation,
     });
   } catch (error) {
     console.error("[Agent API]", error);
 
     if (
       error instanceof Error &&
-      error.message.includes("no credits remaining")
+      error.message.toLowerCase().includes("no credits remaining")
     ) {
       return NextResponse.json(
         {

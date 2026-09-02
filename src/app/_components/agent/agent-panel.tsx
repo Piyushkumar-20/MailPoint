@@ -2,11 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import {
-  confirmCalendarAction,
-  postAgentRequest,
-} from "@/lib/agent-client";
-
+import { postAgentRequest } from "@/lib/agent-client";
 import type { Message } from "@/app/_components/agent/types";
 
 import { AgentComposer } from "@/app/_components/agent/agent-composer";
@@ -29,8 +25,6 @@ export function AgentPanel({
   const [messages, setMessages] = useState<Message[]>([]);
   const [composerValue, setComposerValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingConfirmationId, setPendingConfirmationId] =
-    useState<string | null>(null);
 
   const sendMessage = useCallback(
     async (rawInput: string) => {
@@ -54,7 +48,9 @@ export function AgentPanel({
       setIsLoading(true);
 
       try {
-        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const timezone =
+          Intl.DateTimeFormat().resolvedOptions().timeZone;
+
         const response = await postAgentRequest(input, timezone);
 
         setMessages((currentMessages) => [
@@ -63,12 +59,6 @@ export function AgentPanel({
             id: createMessageId(),
             role: "assistant",
             content: response.output,
-            confirmation: response.confirmation
-              ? {
-                  ...response.confirmation,
-                  status: "pending",
-                }
-              : undefined,
           },
         ]);
       } catch (error) {
@@ -88,118 +78,6 @@ export function AgentPanel({
       }
     },
     [isLoading],
-  );
-
-  const confirmCalendarMessage = useCallback(
-    async (message: Message) => {
-      const confirmation = message.confirmation;
-
-      if (
-        !confirmation ||
-        confirmation.type !== "calendar_event" ||
-        (confirmation.status !== "pending" &&
-          confirmation.status !== "approval_required") ||
-        pendingConfirmationId
-      ) {
-        return;
-      }
-
-      setPendingConfirmationId(message.id);
-
-      try {
-        const result = await confirmCalendarAction(confirmation.token);
-
-        if (result.status === "approval_required") {
-          setMessages((currentMessages) =>
-            currentMessages.map((currentMessage) =>
-              currentMessage.id === message.id
-                ? {
-                    ...currentMessage,
-                    content: result.output,
-                    confirmation: {
-                      ...confirmation,
-                      status: "approval_required",
-                      approvalUrl: result.approvalUrl,
-                    },
-                  }
-                : currentMessage,
-            ),
-          );
-
-          return;
-        }
-
-        setMessages((currentMessages) =>
-          currentMessages.map((currentMessage) =>
-            currentMessage.id === message.id
-              ? {
-                  ...currentMessage,
-                  content: result.output,
-                  confirmation: {
-                    ...confirmation,
-                    status: "confirmed",
-                    approvalUrl: undefined,
-                    result: {
-                      eventId: result.event.id,
-                      htmlLink: result.event.htmlLink,
-                    },
-                    error: undefined,
-                  },
-                }
-              : currentMessage,
-          ),
-        );
-      } catch (error) {
-        setMessages((currentMessages) =>
-          currentMessages.map((currentMessage) =>
-            currentMessage.id === message.id
-              ? {
-                  ...currentMessage,
-                  confirmation: {
-                    ...confirmation,
-                    status: "error",
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : "MailPoint couldn't confirm that calendar action.",
-                  },
-                }
-              : currentMessage,
-          ),
-        );
-      } finally {
-        setPendingConfirmationId(null);
-      }
-    },
-    [pendingConfirmationId],
-  );
-
-  const cancelCalendarMessage = useCallback(
-    (message: Message) => {
-      const confirmation = message.confirmation;
-
-      if (
-        confirmation?.status !== "pending" ||
-        pendingConfirmationId
-      ) {
-        return;
-      }
-
-      setMessages((currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === message.id
-            ? {
-                ...currentMessage,
-                confirmation: {
-                  ...confirmation,
-                  status: "cancelled",
-                },
-              }
-            : currentMessage,
-        ),
-      );
-    },
-    [pendingConfirmationId],
   );
 
   const handleNewConversation = () => {
@@ -229,9 +107,6 @@ export function AgentPanel({
         messages={messages}
         isLoading={isLoading}
         onSuggestion={sendMessage}
-        pendingConfirmationId={pendingConfirmationId}
-        onConfirmCalendar={confirmCalendarMessage}
-        onCancelCalendar={cancelCalendarMessage}
       />
 
       <div

@@ -1,9 +1,4 @@
-import {
-  agentResponseSchema,
-  calendarConfirmationResponseSchema,
-  type AgentResponse,
-  type CalendarConfirmationResponse,
-} from "@/lib/agent-types";
+import { agentResponseSchema, type AgentResponse } from "@/lib/agent-types";
 
 export type AgentRequest = {
   input: string;
@@ -88,60 +83,4 @@ export async function postAgentRequest(
   }
 
   return parsed.data;
-}
-
-export async function confirmCalendarAction(
-  token: string,
-): Promise<CalendarConfirmationResponse> {
-  let response: Response;
-
-  try {
-    response = await fetch("/api/agent/confirm", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ token }),
-    });
-  } catch {
-    throw new AgentClientError(
-      "MailPoint couldn't reach Calendar confirmation. Check your connection and try again.",
-    );
-  }
-
-  let data: unknown;
-
-  try {
-    data = await response.json();
-  } catch {
-    throw new AgentClientError(
-      "MailPoint received an unreadable confirmation response.",
-      response.status,
-    );
-  }
-
-  const parsed = calendarConfirmationResponseSchema.safeParse(data);
-
-  if (parsed.success) {
-    return parsed.data;
-  }
-
-  if (!response.ok) {
-    throw new AgentClientError(
-      response.status === 410
-        ? "This confirmation expired. Ask MailPoint to prepare it again."
-        : response.status === 409
-          ? "This confirmation was already used or is not ready yet."
-          : response.status === 401
-            ? "Your session has expired. Please sign in again."
-            : "MailPoint couldn't confirm that calendar action.",
-      response.status,
-    );
-  }
-
-  throw new AgentClientError(
-    "MailPoint received an unexpected confirmation response.",
-    response.status,
-  );
 }
