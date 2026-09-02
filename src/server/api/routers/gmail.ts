@@ -54,6 +54,169 @@ function dedupeByEntityId<T extends { entity_id: string; updated_at: Date }>(
   return Array.from(byEntityId.values());
 }
 
+type TenantInstance = Awaited<ReturnType<typeof getTenant>>;
+
+async function getGmailAccessToken(tenant: TenantInstance): Promise<string> {
+  const [accessToken, expiresAt, refreshToken] = await Promise.all([
+    tenant.gmail.keys.get_access_token(),
+    tenant.gmail.keys.get_expires_at(),
+    tenant.gmail.keys.get_refresh_token(),
+  ]);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (accessToken && expiresAt && Number(expiresAt) > now + 300) {
+    return accessToken;
+  }
+
+  if (!refreshToken) {
+    if (accessToken) return accessToken;
+    throw new Error("Gmail refresh token is missing");
+  }
+
+  const credentials = await tenant.gmail.keys.get_integration_credentials();
+  const clientId = credentials.client_id ?? process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = credentials.client_secret ?? process.env.GOOGLE_CLIENT_SECRET;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId ?? "",
+      client_secret: clientSecret ?? "",
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!response.ok) {
+    if (accessToken) return accessToken;
+    throw new Error(`Failed to refresh Gmail access token: ${await response.text()}`);
+  }
+
+  const data = (await response.json()) as { access_token: string; expires_in: number };
+  const newAccessToken = data.access_token;
+  const newExpiresAt = now + data.expires_in;
+
+  await Promise.all([
+    tenant.gmail.keys.set_access_token(newAccessToken),
+    tenant.gmail.keys.set_expires_at(String(newExpiresAt)),
+  ]);
+
+  return newAccessToken;
+}
+
+async function permanentlyDeleteGmailMessage(
+  tenant: TenantInstance,
+  messageId: string,
+) {
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const accessToken = await getGmailAccessToken(tenant);
+
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+
+    if (response.ok || response.status === 204 || response.status === 404) {
+      break; // success or already gone
+    }
+
+    const errorText = await response.text();
+
+    // Retry on 429 rate limit with exponential backoff
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      const delayMs = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+
+    if (
+      response.status === 403 &&
+      (errorText.includes("insufficient") ||
+        errorText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") ||
+        errorText.includes("insufficientPermissions"))
+    ) {
+      throw new Error(
+        "Google authorization needs to be updated. Please reconnect your Google account to enable permanent deletion.",
+      );
+    }
+
+    throw new Error(`Gmail permanent delete failed (${response.status}): ${errorText}`);
+  }
+
+  await tenant.gmail.db?.messages?.deleteByEntityId(messageId).catch(() => undefined);
+}
+
+/**
+ * Batch-delete multiple messages in a single Gmail API call.
+ * Uses POST /users/me/messages/batchDelete which is far faster than
+ * N sequential DELETE requests. Includes retry for 429 rate limits.
+ */
+async function batchDeleteGmailMessages(
+  tenant: TenantInstance,
+  messageIds: string[],
+) {
+  if (messageIds.length === 0) return;
+
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const accessToken = await getGmailAccessToken(tenant);
+
+    const response = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: messageIds }),
+      },
+    );
+
+    // 204 No Content = success, 404 = messages already gone
+    if (response.ok || response.status === 204 || response.status === 404) {
+      break;
+    }
+
+    const errorText = await response.text();
+
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      const delayMs = 1000 * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+
+    if (
+      response.status === 403 &&
+      (errorText.includes("insufficient") ||
+        errorText.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") ||
+        errorText.includes("insufficientPermissions"))
+    ) {
+      throw new Error(
+        "Google authorization needs to be updated. Please reconnect your Google account to enable permanent deletion.",
+      );
+    }
+
+    throw new Error(`Gmail batch delete failed (${response.status}): ${errorText}`);
+  }
+
+  // Clean up local Corsair cache
+  await Promise.all(
+    messageIds.map((id) =>
+      tenant.gmail.db?.messages?.deleteByEntityId(id).catch(() => undefined),
+    ),
+  );
+}
+
 export const gmailRouter = createTRPCRouter({
   checkConnection: protectedProcedure.query(async ({ ctx }) => {
     return corsair.manage.connectionStatus.get({
@@ -65,7 +228,7 @@ export const gmailRouter = createTRPCRouter({
     .input(
       paginationSchema.extend({
         query: z.string(),
-        mailbox: z.enum(["inbox", "starred", "sent"]).default("inbox"),
+        mailbox: z.enum(["inbox", "starred", "sent", "trash"]).default("inbox"),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -75,11 +238,13 @@ export const gmailRouter = createTRPCRouter({
         inbox: ["INBOX"],
         starred: ["STARRED"],
         sent: ["SENT"],
+        trash: ["TRASH"],
       }[input.mailbox];
 
       const result = await tenant.gmail.api.messages.list({
         maxResults: input.limit,
         labelIds,
+        includeSpamTrash: input.mailbox === "trash" ? true : undefined,
         q: input.query.trim() || undefined,
       });
 
@@ -89,30 +254,54 @@ export const gmailRouter = createTRPCRouter({
         messages.map(async (message) => {
           if (!message.id) return null;
 
-          const fullMessage = await tenant.gmail.api.messages.get({
-            id: message.id,
-            format: "full",
-          });
+          try {
+            const msg = await tenant.gmail.api.messages.get({
+              id: message.id,
+              format: "metadata",
+              metadataHeaders: ["Subject", "From", "To"],
+            });
 
-          const headers = fullMessage.payload?.headers;
-          return {
-            id: fullMessage.id ?? message.id,
-            threadId: fullMessage.threadId ?? "",
-            snippet: fullMessage.snippet ?? "",
-            subject: getHeader(headers, "Subject"),
-            from: getHeader(headers, "From"),
-            to: getHeader(headers, "To"),
-            date:
-              fullMessage.internalDate != null
-                ? String(fullMessage.internalDate)
-                : null,
-            timestamp: messageTimestamp(
-              fullMessage.internalDate != null
-                ? String(fullMessage.internalDate)
-                : null,
-            ),
-            labelIds: fullMessage.labelIds ?? [],
-          };
+            const headers = msg.payload?.headers;
+            return {
+              id: msg.id ?? message.id,
+              threadId: msg.threadId ?? "",
+              snippet: msg.snippet ?? "",
+              subject: getHeader(headers, "Subject"),
+              from: getHeader(headers, "From"),
+              to: getHeader(headers, "To"),
+              date:
+                msg.internalDate != null
+                  ? String(msg.internalDate)
+                  : null,
+              timestamp: messageTimestamp(
+                msg.internalDate != null
+                  ? String(msg.internalDate)
+                  : null,
+              ),
+              labelIds: msg.labelIds ?? [],
+            };
+          } catch (error) {
+            const errStr = error instanceof Error ? error.message : String(error);
+            // If the message was already permanently deleted (404 / Not Found), skip it
+            if (
+              errStr.includes("Not Found") ||
+              errStr.includes("404") ||
+              (typeof error === "object" && error !== null && "status" in error && (error as { status?: number }).status === 404)
+            ) {
+              return null;
+            }
+            // Re-throw genuine authentication, scope, or fatal API errors
+            if (
+              errStr.includes("insufficient") ||
+              errStr.includes("401") ||
+              errStr.includes("403") ||
+              errStr.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+            ) {
+              throw error;
+            }
+            // For other transient individual message fetch errors, skip the item
+            return null;
+          }
         }),
       );
 
@@ -327,6 +516,110 @@ export const gmailRouter = createTRPCRouter({
 
       return {
         ids: input.messageIds,
+      };
+    }),
+
+
+  deleteMessagePermanently: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await permanentlyDeleteGmailMessage(tenant, input.messageId);
+
+      return {
+        id: input.messageId,
+      };
+    }),
+
+  deleteMessagesPermanently: protectedProcedure
+    .input(
+      z.object({
+        messageIds: z.array(z.string().min(1)).min(1).max(100),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      await batchDeleteGmailMessages(tenant, input.messageIds);
+
+      return {
+        ids: input.messageIds,
+      };
+    }),
+
+  emptyTrash: protectedProcedure.mutation(async ({ ctx }) => {
+    const tenant = await getTenant(ctx.session.user.id);
+
+    const result = await tenant.gmail.api.messages.list({
+      labelIds: ["TRASH"],
+      includeSpamTrash: true,
+      maxResults: 100,
+    });
+
+    const messages = result.messages ?? [];
+    const messageIds = messages
+      .map((message) => message.id)
+      .filter((id): id is string => Boolean(id));
+
+    if (messageIds.length > 0) {
+      await batchDeleteGmailMessages(tenant, messageIds);
+    }
+
+    return {
+      deletedCount: messageIds.length,
+    };
+  }),
+
+  restoreMessage: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const message = await tenant.gmail.api.messages.modify({
+        id: input.messageId,
+        addLabelIds: ["INBOX"],
+        removeLabelIds: ["TRASH"],
+      });
+
+      return {
+        id: message.id ?? input.messageId,
+        labelIds: message.labelIds ?? [],
+      };
+    }),
+
+  restoreMessages: protectedProcedure
+    .input(
+      z.object({
+        messageIds: z.array(z.string().min(1)).min(1).max(100),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await getTenant(ctx.session.user.id);
+
+      const messages = await Promise.all(
+        input.messageIds.map((messageId) =>
+          tenant.gmail.api.messages.modify({
+            id: messageId,
+            addLabelIds: ["INBOX"],
+            removeLabelIds: ["TRASH"],
+          }),
+        ),
+      );
+
+      return {
+        messages: messages.map((message, index) => ({
+          id: message.id ?? input.messageIds[index],
+          labelIds: message.labelIds ?? [],
+        })),
       };
     }),
 

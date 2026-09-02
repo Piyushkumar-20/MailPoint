@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignLeft,
+  ArchiveRestore,
   ArrowLeft,
   Bold,
   CalendarDays,
   Check,
   Clock3,
+  Info,
   Loader2,
   Mail,
   MailOpen,
@@ -45,6 +47,20 @@ type ComposerMode = "compose" | "reply" | "forward";
 
 type MeetingSlot = { start: string; end: string };
 
+type ConfirmDialogState =
+  | { type: "normalDelete"; messageId: string }
+  | { type: "bulkNormalDelete"; messageIds: string[] }
+  | { type: "permanentDelete"; messageId: string }
+  | { type: "bulkPermanentDelete"; messageIds: string[] }
+  | { type: "emptyTrash" }
+  | null;
+
+type ToastState = {
+  message: string;
+  subMessage?: string;
+  onUndo?: () => void;
+} | null;
+
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 
 const MEETING_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
@@ -74,7 +90,7 @@ function extractEmails(value: string | undefined) {
 
 function getMeetingAttendeeCandidates(
   email: { from: string; to: string },
-  view: "inbox" | "starred" | "drafts" | "sent",
+  view: "inbox" | "starred" | "drafts" | "sent" | "trash",
 ) {
   const orderedSources =
     view === "sent" ? [email.to, email.from] : [email.from, email.to];
@@ -97,7 +113,7 @@ export function GmailPanel({
   searchQuery,
   calendarComposeRequest,
 }: {
-  view: "inbox" | "starred" | "drafts" | "sent";
+  view: "inbox" | "starred" | "drafts" | "sent" | "trash";
   /** The active (submitted) search query, controlled by the header search box. */
   searchQuery: string;
   calendarComposeRequest?: {
@@ -112,6 +128,8 @@ export function GmailPanel({
   const [composerMode, setComposerMode] = useState<ComposerMode | null>(null);
   const [composerMinimized, setComposerMinimized] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null);
+  const [toast, setToast] = useState<ToastState>(null);
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(30);
@@ -174,8 +192,22 @@ export function GmailPanel({
     },
   });
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const mailbox =
-    view === "starred" ? "starred" : view === "sent" ? "sent" : "inbox";
+    view === "starred"
+      ? "starred"
+      : view === "sent"
+        ? "sent"
+        : view === "trash"
+          ? "trash"
+          : "inbox";
 
   const emails = api.gmail.searchEmails.useQuery(
     {
@@ -185,7 +217,11 @@ export function GmailPanel({
       mailbox,
     },
     {
-      enabled: view === "inbox" || view === "starred" || view === "sent",
+      enabled:
+        view === "inbox" ||
+        view === "starred" ||
+        view === "sent" ||
+        view === "trash",
     },
   );
 
@@ -298,7 +334,7 @@ export function GmailPanel({
   });
 
   /*
-   * Delete normal Gmail messages.
+   * Delete normal Gmail messages (Move to Trash).
    *
    * The UI is updated optimistically so the deleted email disappears
    * immediately instead of waiting for the Gmail API/refetch cycle.
@@ -338,12 +374,19 @@ export function GmailPanel({
       }
     },
 
-    onSuccess: async () => {
+    onSuccess: async (_, { messageId }) => {
       /*
        * Confirm the optimistic update against the real Gmail state.
        */
       await utils.gmail.searchEmails.invalidate();
       await utils.gmail.getMessage.invalidate();
+      setToast({
+        message: "Conversation moved to Trash.",
+        subMessage: "It will be permanently deleted after 30 days.",
+        onUndo: () => {
+          restoreMessage.mutate({ messageId });
+        },
+      });
     },
 
     onError: async () => {
@@ -354,11 +397,12 @@ export function GmailPanel({
       await utils.gmail.searchEmails.invalidate();
     },
   });
-  // Bulk delete selected messages
+
+  // Bulk move to trash
   const deleteMessages = api.gmail.deleteMessages.useMutation({
     onMutate: async ({ messageIds }) => {
       await utils.gmail.searchEmails.cancel();
-  
+
       utils.gmail.searchEmails.setData(
         {
           query: searchQuery,
@@ -368,24 +412,251 @@ export function GmailPanel({
         },
         (current) => {
           if (!current) return current;
-  
+
           return current.filter(
             (email) => !messageIds.includes(email.id),
           );
         },
       );
-  
+
       setSelectedIds((current) =>
         current.filter((id) => !messageIds.includes(id)),
       );
     },
-  
-    onSuccess: async () => {
+
+    onSuccess: async (_, { messageIds }) => {
       await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message:
+          messageIds.length === 1
+            ? "Conversation moved to Trash."
+            : `${messageIds.length} conversations moved to Trash.`,
+        subMessage: "They will be permanently deleted after 30 days.",
+        onUndo: () => {
+          restoreMessages.mutate({ messageIds });
+        },
+      });
     },
-  
+
     onError: async () => {
       await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+  // Restore single message from Trash
+  const restoreMessage = api.gmail.restoreMessage.useMutation({
+    onMutate: async ({ messageId }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+          return current.filter((email) => email.id !== messageId);
+        },
+      );
+
+      if (selectedId === messageId) {
+        setSelectedId(null);
+      }
+    },
+
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+      setToast({
+        message: "Conversation moved to Inbox.",
+      });
+    },
+
+    onError: async () => {
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+  // Bulk restore messages from Trash
+  const restoreMessages = api.gmail.restoreMessages.useMutation({
+    onMutate: async ({ messageIds }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+          return current.filter((email) => !messageIds.includes(email.id));
+        },
+      );
+
+      setSelectedIds((current) =>
+        current.filter((id) => !messageIds.includes(id)),
+      );
+    },
+
+    onSuccess: async (_, { messageIds }) => {
+      await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message:
+          messageIds.length === 1
+            ? "Conversation moved to Inbox."
+            : `${messageIds.length} conversations moved to Inbox.`,
+      });
+    },
+
+    onError: async () => {
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+  // Delete single message permanently
+  const deleteMessagePermanently = api.gmail.deleteMessagePermanently.useMutation({
+    onMutate: async ({ messageId }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      const previousEmails = utils.gmail.searchEmails.getData({
+        query: searchQuery,
+        limit: 50,
+        offset: 0,
+        mailbox,
+      });
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+          return current.filter((email) => email.id !== messageId);
+        },
+      );
+
+      if (selectedId === messageId) {
+        setSelectedId(null);
+      }
+
+      return { previousEmails };
+    },
+
+    onSuccess: async () => {
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+      setToast({
+        message: "Conversation permanently deleted.",
+      });
+    },
+
+    onError: async (error, _, context) => {
+      if (context?.previousEmails) {
+        utils.gmail.searchEmails.setData(
+          {
+            query: searchQuery,
+            limit: 50,
+            offset: 0,
+            mailbox,
+          },
+          context.previousEmails,
+        );
+      }
+      await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message: "Failed to permanently delete message",
+        subMessage: error.message ?? "An error occurred during permanent deletion.",
+      });
+    },
+  });
+
+  // Bulk delete messages permanently
+  const deleteMessagesPermanently = api.gmail.deleteMessagesPermanently.useMutation({
+    onMutate: async ({ messageIds }) => {
+      await utils.gmail.searchEmails.cancel();
+
+      const previousEmails = utils.gmail.searchEmails.getData({
+        query: searchQuery,
+        limit: 50,
+        offset: 0,
+        mailbox,
+      });
+
+      utils.gmail.searchEmails.setData(
+        {
+          query: searchQuery,
+          limit: 50,
+          offset: 0,
+          mailbox,
+        },
+        (current) => {
+          if (!current) return current;
+          return current.filter((email) => !messageIds.includes(email.id));
+        },
+      );
+
+      setSelectedIds((current) =>
+        current.filter((id) => !messageIds.includes(id)),
+      );
+
+      return { previousEmails };
+    },
+
+    onSuccess: async (_, { messageIds }) => {
+      await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message:
+          messageIds.length === 1
+            ? "Conversation permanently deleted."
+            : `${messageIds.length} conversations permanently deleted.`,
+      });
+    },
+
+    onError: async (error, _, context) => {
+      if (context?.previousEmails) {
+        utils.gmail.searchEmails.setData(
+          {
+            query: searchQuery,
+            limit: 50,
+            offset: 0,
+            mailbox,
+          },
+          context.previousEmails,
+        );
+      }
+      await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message: "Failed to permanently delete messages",
+        subMessage: error.message ?? "An error occurred during bulk permanent deletion.",
+      });
+    },
+  });
+
+  // Empty Trash (only clears UI after backend confirms successful permanent deletion)
+  const emptyTrash = api.gmail.emptyTrash.useMutation({
+    onSuccess: async () => {
+      setSelectedId(null);
+      setSelectedIds([]);
+      await utils.gmail.searchEmails.invalidate();
+      await utils.gmail.getMessage.invalidate();
+      setToast({
+        message: "Trash emptied.",
+      });
+    },
+
+    onError: async (error) => {
+      await utils.gmail.searchEmails.invalidate();
+      setToast({
+        message: "Failed to empty Trash",
+        subMessage: error.message ?? "An error occurred while emptying Trash.",
+      });
     },
   });
 
@@ -628,6 +899,62 @@ export function GmailPanel({
     }
   };
 
+  const isDeletePending =
+    deleteMessage.isPending ||
+    deleteMessages.isPending ||
+    deleteMessagePermanently.isPending ||
+    deleteMessagesPermanently.isPending ||
+    emptyTrash.isPending;
+
+  let dialogProps = {
+    title: "",
+    message: "",
+    confirmLabel: "",
+    confirmVariant: "default" as "default" | "destructive",
+  };
+
+  if (confirmDialog?.type === "normalDelete") {
+    dialogProps = {
+      title: "Move to Trash?",
+      message:
+        "This conversation will be moved to Trash and permanently deleted after 30 days.",
+      confirmLabel: "Move to Trash",
+      confirmVariant: "default",
+    };
+  } else if (confirmDialog?.type === "bulkNormalDelete") {
+    const count = confirmDialog.messageIds.length;
+    dialogProps = {
+      title: "Move to Trash?",
+      message: `Move ${count} conversation${count === 1 ? "" : "s"} to Trash? They will be permanently deleted after 30 days.`,
+      confirmLabel: "Move to Trash",
+      confirmVariant: "default",
+    };
+  } else if (confirmDialog?.type === "permanentDelete") {
+    dialogProps = {
+      title: "Delete permanently?",
+      message:
+        "This message will be permanently deleted and cannot be recovered.",
+      confirmLabel: "Delete permanently",
+      confirmVariant: "destructive",
+    };
+  } else if (confirmDialog?.type === "bulkPermanentDelete") {
+    const count = confirmDialog.messageIds.length;
+    dialogProps = {
+      title: "Delete messages permanently?",
+      message: `This will permanently delete ${count} message${count === 1 ? "" : "s"}. They cannot be recovered.`,
+      confirmLabel: "Delete permanently",
+      confirmVariant: "destructive",
+    };
+  } else if (confirmDialog?.type === "emptyTrash") {
+    dialogProps = {
+      title: "Empty Trash?",
+      message:
+        "All messages in Trash will be permanently deleted and cannot be recovered.",
+      confirmLabel: "Delete permanently",
+      confirmVariant: "destructive",
+    };
+  }
+
   return (
     <>
       <div className="flex h-full min-h-0 flex-col">
@@ -640,7 +967,9 @@ export function GmailPanel({
                   ? "Starred"
                   : view === "sent"
                     ? "Sent"
-                    : "Drafts"}
+                    : view === "trash"
+                      ? "Trash"
+                      : "Drafts"}
             </h2>
 
             <p className="text-muted-foreground text-xs">
@@ -696,6 +1025,27 @@ export function GmailPanel({
           </div>
         )}
 
+        {view === "trash" && !selectedId && (
+          <div className="bg-muted/40 border-b px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
+            <span className="text-muted-foreground flex items-center gap-1.5">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              Messages in Trash are permanently deleted after 30 days.
+            </span>
+            {emails.data && emails.data.length > 0 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmDialog({ type: "emptyTrash" })}
+                disabled={isDeletePending}
+                className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0 font-medium"
+              >
+                Empty Trash now
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="bg-muted/20 min-h-0 flex-1 overflow-y-auto">
           {selectedId ? (
             <FullEmailView
@@ -710,11 +1060,30 @@ export function GmailPanel({
               isStarred={isStarred}
               isStarPending={modifyMessageLabels.isPending}
               onToggleStar={toggleStar}
+              onDelete={(messageId) => {
+                if (view === "trash") {
+                  setConfirmDialog({ type: "permanentDelete", messageId });
+                } else {
+                  setConfirmDialog({ type: "normalDelete", messageId });
+                }
+              }}
+              onRestore={(messageId) => restoreMessage.mutate({ messageId })}
+              onPermanentDelete={(messageId) =>
+                setConfirmDialog({ type: "permanentDelete", messageId })
+              }
+              isDeleting={
+                deleteMessage.isPending || deleteMessagePermanently.isPending
+              }
+              isRestoring={restoreMessage.isPending}
             />
           ) : (
             <section className="bg-background min-h-full">
-              {(view === "inbox" || view === "starred" || view === "sent") && (
+              {(view === "inbox" ||
+                view === "starred" ||
+                view === "sent" ||
+                view === "trash") && (
                 <MailList
+                  view={view}
                   emails={emails.data}
                   isLoading={emails.isLoading}
                   error={emails.error?.message}
@@ -723,12 +1092,29 @@ export function GmailPanel({
                   onSelectionChange={setSelectedIds}
                   onSelect={(messageId) => {
                     setSelectedId(messageId);
-                    markAsRead.mutate({
-                      messageId,
-                      removeLabelIds: ["UNREAD"],
-                    });
+                    if (view !== "trash") {
+                      markAsRead.mutate({
+                        messageId,
+                        removeLabelIds: ["UNREAD"],
+                      });
+                    }
                   }}
-                  onDelete={(messageId) => deleteMessage.mutate({ messageId })}
+                  onDelete={(messageId) => {
+                    if (view === "trash") {
+                      setConfirmDialog({
+                        type: "permanentDelete",
+                        messageId,
+                      });
+                    } else {
+                      setConfirmDialog({
+                        type: "normalDelete",
+                        messageId,
+                      });
+                    }
+                  }}
+                  onRestore={(messageId) =>
+                    restoreMessage.mutate({ messageId })
+                  }
                   onReply={openReply}
                   onForwardRequest={handleForwardFromList}
                   onToggleRead={(email) => {
@@ -754,12 +1140,21 @@ export function GmailPanel({
                   onBulkDelete={() => {
                     if (selectedIds.length === 0) return;
 
-                    const confirmed = window.confirm(
-                      `Move ${selectedIds.length} selected email${selectedIds.length === 1 ? "" : "s"} to Trash?`,
-                    );
-                    if (!confirmed) return;
-
-                    deleteMessages.mutate({ messageIds: selectedIds });
+                    if (view === "trash") {
+                      setConfirmDialog({
+                        type: "bulkPermanentDelete",
+                        messageIds: selectedIds,
+                      });
+                    } else {
+                      setConfirmDialog({
+                        type: "bulkNormalDelete",
+                        messageIds: selectedIds,
+                      });
+                    }
+                  }}
+                  onBulkRestore={() => {
+                    if (selectedIds.length === 0) return;
+                    restoreMessages.mutate({ messageIds: selectedIds });
                   }}
                   onBulkToggleRead={() => {
                     if (selectedIds.length === 0) return;
@@ -800,7 +1195,13 @@ export function GmailPanel({
                     });
                   }}
                   isDeleting={
-                    deleteMessage.isPending || deleteMessages.isPending
+                    deleteMessage.isPending ||
+                    deleteMessages.isPending ||
+                    deleteMessagePermanently.isPending ||
+                    deleteMessagesPermanently.isPending
+                  }
+                  isRestoring={
+                    restoreMessage.isPending || restoreMessages.isPending
                   }
                   isBulkActionPending={modifyMessagesLabels.isPending}
                 />
@@ -936,11 +1337,51 @@ export function GmailPanel({
           }
         />
       )}
+
+      {confirmDialog && (
+        <ActionConfirmDialog
+          open={Boolean(confirmDialog)}
+          title={dialogProps.title}
+          message={dialogProps.message}
+          confirmLabel={dialogProps.confirmLabel}
+          confirmVariant={dialogProps.confirmVariant}
+          isPending={isDeletePending}
+          onCancel={() => setConfirmDialog(null)}
+          onConfirm={() => {
+            if (confirmDialog.type === "normalDelete") {
+              deleteMessage.mutate({ messageId: confirmDialog.messageId });
+            } else if (confirmDialog.type === "bulkNormalDelete") {
+              deleteMessages.mutate({ messageIds: confirmDialog.messageIds });
+            } else if (confirmDialog.type === "permanentDelete") {
+              deleteMessagePermanently.mutate({
+                messageId: confirmDialog.messageId,
+              });
+            } else if (confirmDialog.type === "bulkPermanentDelete") {
+              deleteMessagesPermanently.mutate({
+                messageIds: confirmDialog.messageIds,
+              });
+            } else if (confirmDialog.type === "emptyTrash") {
+              emptyTrash.mutate();
+            }
+            setConfirmDialog(null);
+          }}
+        />
+      )}
+
+      {toast && (
+        <NotificationToast
+          message={toast.message}
+          subMessage={toast.subMessage}
+          onUndo={toast.onUndo}
+          onClose={() => setToast(null)}
+        />
+      )}
     </>
   );
 }
 
 function MailList({
+  view,
   emails,
   isLoading,
   error,
@@ -949,16 +1390,20 @@ function MailList({
   onSelectionChange,
   onSelect,
   onDelete,
+  onRestore,
   onReply,
   onBulkDelete,
+  onBulkRestore,
   onBulkToggleRead,
   onBulkToggleStar,
   onForwardRequest,
   onToggleRead,
   onToggleStar,
   isDeleting,
+  isRestoring,
   isBulkActionPending,
 }: {
+  view: "inbox" | "starred" | "drafts" | "sent" | "trash";
   emails:
     | {
         id: string;
@@ -976,14 +1421,17 @@ function MailList({
   onSelectionChange: (ids: string[]) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onRestore?: (id: string) => void;
   onReply: (email: { from: string; subject: string }) => void;
   onBulkDelete: () => void;
+  onBulkRestore?: () => void;
   onBulkToggleRead: () => void;
   onBulkToggleStar: () => void;
   onForwardRequest: (messageId: string) => void;
   onToggleRead: (email: { id: string; labelIds: string[] }) => void;
   onToggleStar: (email: { id: string; labelIds: string[] }) => void;
   isDeleting: boolean;
+  isRestoring?: boolean;
   isBulkActionPending: boolean;
 }) {
   const [contextMenu, setContextMenu] = useState<{
@@ -991,6 +1439,8 @@ function MailList({
     y: number;
     emailId: string;
   } | null>(null);
+
+  const isTrashView = view === "trash";
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -1010,7 +1460,12 @@ function MailList({
   if (error) return <StatusLine tone="error">{error}</StatusLine>;
 
   if (!emails || emails.length === 0) {
-    return (
+    return isTrashView ? (
+      <EmptyPanel
+        title="Trash is empty"
+        description="Messages you delete will appear here."
+      />
+    ) : (
       <EmptyPanel
         title="No emails yet"
         description="Try refreshing from Gmail."
@@ -1078,60 +1533,94 @@ function MailList({
 
             <div className="bg-border mx-1 h-5 w-px" />
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onBulkToggleRead}
-              disabled={isBulkActionPending}
-              title={allSelectedUnread ? "Mark as read" : "Mark as unread"}
-              aria-label={allSelectedUnread ? "Mark as read" : "Mark as unread"}
-              className="h-8 gap-1.5"
-            >
-              {allSelectedUnread ? (
-                <MailOpen className="h-3.5 w-3.5" />
-              ) : (
-                <Mail className="h-3.5 w-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {allSelectedUnread ? "Mark read" : "Mark unread"}
-              </span>
-            </Button>
+            {isTrashView ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBulkRestore}
+                  disabled={Boolean(isRestoring) || isDeleting}
+                  title="Move to Inbox"
+                  aria-label="Move to Inbox"
+                  className="h-8 gap-1.5"
+                >
+                  <ArchiveRestore className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Move to Inbox</span>
+                </Button>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onBulkToggleStar}
-              disabled={isBulkActionPending}
-              title={allSelectedStarred ? "Unstar" : "Star"}
-              aria-label={allSelectedStarred ? "Unstar" : "Star"}
-              className="h-8 gap-1.5"
-            >
-              <Star
-                className={cn(
-                  "h-3.5 w-3.5",
-                  allSelectedStarred && "fill-primary text-primary",
-                )}
-              />
-              <span className="hidden sm:inline">
-                {allSelectedStarred ? "Unstar" : "Star"}
-              </span>
-            </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBulkDelete}
+                  disabled={isDeleting || Boolean(isRestoring)}
+                  title="Delete permanently"
+                  aria-label="Delete permanently"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Delete permanently</span>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBulkToggleRead}
+                  disabled={isBulkActionPending}
+                  title={allSelectedUnread ? "Mark as read" : "Mark as unread"}
+                  aria-label={allSelectedUnread ? "Mark as read" : "Mark as unread"}
+                  className="h-8 gap-1.5"
+                >
+                  {allSelectedUnread ? (
+                    <MailOpen className="h-3.5 w-3.5" />
+                  ) : (
+                    <Mail className="h-3.5 w-3.5" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {allSelectedUnread ? "Mark read" : "Mark unread"}
+                  </span>
+                </Button>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onBulkDelete}
-              disabled={isDeleting}
-              title="Delete selected emails"
-              aria-label="Delete selected emails"
-              className="text-muted-foreground hover:text-destructive h-8 gap-1.5"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Delete</span>
-            </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBulkToggleStar}
+                  disabled={isBulkActionPending}
+                  title={allSelectedStarred ? "Unstar" : "Star"}
+                  aria-label={allSelectedStarred ? "Unstar" : "Star"}
+                  className="h-8 gap-1.5"
+                >
+                  <Star
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      allSelectedStarred && "fill-primary text-primary",
+                    )}
+                  />
+                  <span className="hidden sm:inline">
+                    {allSelectedStarred ? "Unstar" : "Star"}
+                  </span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onBulkDelete}
+                  disabled={isDeleting}
+                  title="Delete selected emails"
+                  aria-label="Delete selected emails"
+                  className="text-muted-foreground hover:text-destructive h-8 gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Delete</span>
+                </Button>
+              </>
+            )}
 
             <Button
               type="button"
@@ -1235,11 +1724,11 @@ function MailList({
                   </span>
                 </button>
 
-                <div className="flex shrink-0 items-start gap-2">
+                <div className="flex shrink-0 items-start gap-1">
                   {email.date && (
                     <span
                       className={cn(
-                        "pt-0.5 text-xs",
+                        "pt-0.5 text-xs mr-1",
                         isUnread
                           ? "font-semibold text-foreground"
                           : "text-muted-foreground",
@@ -1249,27 +1738,57 @@ function MailList({
                     </span>
                   )}
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-label="Delete email"
-                    title="Delete email"
-                    onClick={(event) => {
-                      event.stopPropagation();
+                  {isTrashView ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-foreground h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                        aria-label="Move to Inbox"
+                        title="Move to Inbox"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRestore?.(email.id);
+                        }}
+                        disabled={Boolean(isRestoring) || isDeleting}
+                      >
+                        <ArchiveRestore className="h-3.5 w-3.5" />
+                      </Button>
 
-                      const confirmed = window.confirm(
-                        "Move this email to Trash?",
-                      );
-                      if (!confirmed) return;
-
-                      onDelete(email.id);
-                    }}
-                    disabled={isDeleting}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                        aria-label="Delete permanently"
+                        title="Delete permanently"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(email.id);
+                        }}
+                        disabled={isDeleting || Boolean(isRestoring)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label="Delete email"
+                      title="Delete email"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(email.id);
+                      }}
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </li>
@@ -1293,84 +1812,107 @@ function MailList({
             }}
           />
 
-          <ContextMenuAction
-            icon={<ReplyIcon className="h-4 w-4" />}
-            label="Reply"
-            onClick={() => {
-              setContextMenu(null);
-              onReply({
-                from: contextEmail.from,
-                subject: contextEmail.subject,
-              });
-            }}
-          />
-
-          <ContextMenuAction
-            icon={<ForwardIcon className="h-4 w-4" />}
-            label="Forward"
-            onClick={() => {
-              setContextMenu(null);
-              onForwardRequest(contextEmail.id);
-            }}
-          />
-
-          <div className="bg-border my-1 h-px" />
-
-          <ContextMenuAction
-            icon={
-              contextEmail.labelIds.includes("UNREAD") ? (
-                <MailOpen className="h-4 w-4" />
-              ) : (
-                <Mail className="h-4 w-4" />
-              )
-            }
-            label={
-              contextEmail.labelIds.includes("UNREAD")
-                ? "Mark as read"
-                : "Mark as unread"
-            }
-            onClick={() => {
-              setContextMenu(null);
-              onToggleRead(contextEmail);
-            }}
-          />
-
-          <ContextMenuAction
-            icon={
-              <Star
-                className={cn(
-                  "h-4 w-4",
-                  contextEmail.labelIds.includes("STARRED") &&
-                    "fill-primary text-primary",
-                )}
+          {isTrashView ? (
+            <>
+              <ContextMenuAction
+                icon={<ArchiveRestore className="h-4 w-4" />}
+                label="Move to Inbox"
+                onClick={() => {
+                  setContextMenu(null);
+                  onRestore?.(contextEmail.id);
+                }}
               />
-            }
-            label={
-              contextEmail.labelIds.includes("STARRED")
-                ? "Unstar"
-                : "Star"
-            }
-            onClick={() => {
-              setContextMenu(null);
-              onToggleStar(contextEmail);
-            }}
-          />
 
-          <div className="bg-border my-1 h-px" />
+              <div className="bg-border my-1 h-px" />
 
-          <ContextMenuAction
-            icon={<Trash2 className="h-4 w-4" />}
-            label="Delete"
-            destructive
-            onClick={() => {
-              setContextMenu(null);
+              <ContextMenuAction
+                icon={<Trash2 className="h-4 w-4" />}
+                label="Delete permanently"
+                destructive
+                onClick={() => {
+                  setContextMenu(null);
+                  onDelete(contextEmail.id);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <ContextMenuAction
+                icon={<ReplyIcon className="h-4 w-4" />}
+                label="Reply"
+                onClick={() => {
+                  setContextMenu(null);
+                  onReply({
+                    from: contextEmail.from,
+                    subject: contextEmail.subject,
+                  });
+                }}
+              />
 
-              const confirmed = window.confirm("Move this email to Trash?");
-              if (!confirmed) return;
+              <ContextMenuAction
+                icon={<ForwardIcon className="h-4 w-4" />}
+                label="Forward"
+                onClick={() => {
+                  setContextMenu(null);
+                  onForwardRequest(contextEmail.id);
+                }}
+              />
 
-              onDelete(contextEmail.id);
-            }}
-          />
+              <div className="bg-border my-1 h-px" />
+
+              <ContextMenuAction
+                icon={
+                  contextEmail.labelIds.includes("UNREAD") ? (
+                    <MailOpen className="h-4 w-4" />
+                  ) : (
+                    <Mail className="h-4 w-4" />
+                  )
+                }
+                label={
+                  contextEmail.labelIds.includes("UNREAD")
+                    ? "Mark as read"
+                    : "Mark as unread"
+                }
+                onClick={() => {
+                  setContextMenu(null);
+                  onToggleRead(contextEmail);
+                }}
+              />
+
+              <ContextMenuAction
+                icon={
+                  <Star
+                    className={cn(
+                      "h-4 w-4",
+                      contextEmail.labelIds.includes("STARRED") &&
+                        "fill-primary text-primary",
+                    )}
+                  />
+                }
+                label={
+                  contextEmail.labelIds.includes("STARRED")
+                    ? "Unstar"
+                    : "Star"
+                }
+                onClick={() => {
+                  setContextMenu(null);
+                  onToggleStar(contextEmail);
+                }}
+              />
+
+              <div className="bg-border my-1 h-px" />
+
+              <ContextMenuAction
+                icon={<Trash2 className="h-4 w-4" />}
+                label="Delete"
+                destructive
+                onClick={() => {
+                  setContextMenu(null);
+                  onDelete(contextEmail.id);
+                }}
+              />
+            </>
+          )}
         </div>
       )}
     </>
@@ -1511,6 +2053,11 @@ function FullEmailView({
   isStarred,
   isStarPending,
   onToggleStar,
+  onDelete,
+  onRestore,
+  onPermanentDelete,
+  isDeleting,
+  isRestoring,
 }: {
   selectedEmail:
     | {
@@ -1529,7 +2076,7 @@ function FullEmailView({
   isLoading: boolean;
   error?: string;
   onBack: () => void;
-  view: "inbox" | "starred" | "drafts" | "sent";
+  view: "inbox" | "starred" | "drafts" | "sent" | "trash";
   onReply: (email: { from: string; subject: string }) => void;
   onForward: (email: {
     from: string;
@@ -1541,13 +2088,20 @@ function FullEmailView({
   isStarred: boolean;
   isStarPending: boolean;
   onToggleStar: () => void;
+  onDelete?: (messageId: string) => void;
+  onRestore?: (messageId: string) => void;
+  onPermanentDelete?: (messageId: string) => void;
+  isDeleting?: boolean;
+  isRestoring?: boolean;
 }) {
+  const isTrashView = view === "trash";
+
   return (
     <article className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <Button type="button" variant="outline" size="sm" onClick={onBack}>
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to {view}
+          Back to {view === "trash" ? "Trash" : view}
         </Button>
       </div>
 
@@ -1557,28 +2111,63 @@ function FullEmailView({
 
       {selectedEmail && (
         <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm sm:p-6">
+          {isTrashView && (
+            <div className="bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-200 mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-xs sm:text-sm">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  This message is in Trash. Messages in Trash are permanently deleted after 30 days.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onRestore?.(selectedEmail.id)}
+                  disabled={Boolean(isRestoring) || Boolean(isDeleting)}
+                >
+                  <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
+                  Move to Inbox
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => onPermanentDelete?.(selectedEmail.id)}
+                  disabled={Boolean(isRestoring) || Boolean(isDeleting)}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete permanently
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-start justify-between gap-4">
             <h2 className="font-heading min-w-0 text-2xl leading-tight font-semibold">
               {selectedEmail.subject || "(no subject)"}
             </h2>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onToggleStar}
-              disabled={isStarPending}
-              aria-label={isStarred ? "Unstar email" : "Star email"}
-              title={isStarred ? "Unstar" : "Star"}
-              className="shrink-0"
-            >
-              <Star
-                className={cn(
-                  "h-5 w-5",
-                  isStarred && "fill-primary text-primary",
-                )}
-              />
-            </Button>
+            {!isTrashView && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onToggleStar}
+                disabled={isStarPending}
+                aria-label={isStarred ? "Unstar email" : "Star email"}
+                title={isStarred ? "Unstar" : "Star"}
+                className="shrink-0"
+              >
+                <Star
+                  className={cn(
+                    "h-5 w-5",
+                    isStarred && "fill-primary text-primary",
+                  )}
+                />
+              </Button>
+            )}
           </div>
 
           <div className="text-muted-foreground mt-4 space-y-1 text-sm">
@@ -1609,36 +2198,76 @@ function FullEmailView({
             />
           </div>
 
-          <div className="mt-5 flex items-center gap-2 border-t pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onReply(selectedEmail)}
-            >
-              <ReplyIcon className="h-3.5 w-3.5" />
-              Reply
-            </Button>
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t pt-4">
+            {isTrashView ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRestore?.(selectedEmail.id)}
+                  disabled={Boolean(isRestoring) || Boolean(isDeleting)}
+                >
+                  <ArchiveRestore className="h-3.5 w-3.5" />
+                  Move to Inbox
+                </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onForward(selectedEmail)}
-            >
-              <ForwardIcon className="h-3.5 w-3.5" />
-              Forward
-            </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => onPermanentDelete?.(selectedEmail.id)}
+                  disabled={Boolean(isRestoring) || Boolean(isDeleting)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete permanently
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onReply(selectedEmail)}
+                >
+                  <ReplyIcon className="h-3.5 w-3.5" />
+                  Reply
+                </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onScheduleMeeting}
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              Schedule meeting
-            </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onForward(selectedEmail)}
+                >
+                  <ForwardIcon className="h-3.5 w-3.5" />
+                  Forward
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onScheduleMeeting}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Schedule meeting
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive ml-auto"
+                  onClick={() => onDelete?.(selectedEmail.id)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Move to Trash
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -2662,6 +3291,135 @@ function EmptyPanel({
     <div className="m-4 rounded-lg border border-dashed py-12 text-center">
       <p className="text-sm font-medium">{title}</p>
       <p className="text-muted-foreground mt-1 text-sm">{description}</p>
+    </div>
+  );
+}
+
+function ActionConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel,
+  confirmVariant = "default",
+  isPending = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmVariant?: "default" | "destructive";
+  isPending?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isPending) {
+          onCancel();
+        }
+      }}
+    >
+      <section className="bg-card text-card-foreground flex w-full max-w-md flex-col overflow-hidden rounded-xl border shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+          <h2 className="text-base font-semibold">{title}</h2>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onCancel}
+            disabled={isPending}
+            aria-label="Close"
+          >
+            ×
+          </Button>
+        </div>
+
+        <div className="px-5 py-4 text-sm text-muted-foreground">
+          <p>{message}</p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3 bg-muted/20">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant={confirmVariant}
+            onClick={onConfirm}
+            disabled={isPending}
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              confirmLabel
+            )}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NotificationToast({
+  message,
+  subMessage,
+  onUndo,
+  onClose,
+}: {
+  message: string;
+  subMessage?: string;
+  onUndo?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 px-4 py-3 text-sm shadow-xl border border-zinc-800 dark:border-zinc-200 animate-in fade-in slide-in-from-bottom-2">
+      <div className="flex flex-col">
+        <span className="font-medium">{message}</span>
+        {subMessage && (
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            {subMessage}
+          </span>
+        )}
+      </div>
+      {onUndo && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onUndo();
+            onClose();
+          }}
+          className="h-7 text-xs font-medium ml-1 text-zinc-900 bg-zinc-100 hover:bg-zinc-200 dark:text-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+        >
+          Undo
+        </Button>
+      )}
+      <button
+        type="button"
+        onClick={onClose}
+        className="text-zinc-400 hover:text-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-900 ml-1.5"
+        aria-label="Dismiss notification"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }

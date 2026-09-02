@@ -35,9 +35,6 @@ importers:
       '@hugeicons/react':
         specifier: ^1.1.10
         version: 1.1.10(react@19.2.7)
-      '@openai/agents':
-        specifier: 0.17.0
-        version: 0.17.0(undici@7.29.0)(ws@8.21.3)(zod@4.4.3)
       '@t3-oss/env-nextjs':
         specifier: ^0.13.11
         version: 0.13.11(typescript@5.9.3)(zod@4.4.3)
@@ -6407,6 +6404,7 @@ snapshots:
       - supports-color
       - undici
       - ws
+    optional: true
 
   '@openai/agents-openai@0.17.0(undici@7.29.0)(ws@8.21.3)(zod@4.4.3)':
     dependencies:
@@ -6421,6 +6419,7 @@ snapshots:
       - supports-color
       - undici
       - ws
+    optional: true
 
   '@openai/agents-realtime@0.17.0(undici@7.29.0)(zod@4.4.3)':
     dependencies:
@@ -6437,6 +6436,7 @@ snapshots:
       - supports-color
       - undici
       - utf-8-validate
+    optional: true
 
   '@openai/agents@0.17.0(undici@7.29.0)(ws@8.21.3)(zod@4.4.3)':
     dependencies:
@@ -6455,6 +6455,7 @@ snapshots:
       - undici
       - utf-8-validate
       - ws
+    optional: true
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 
@@ -6686,6 +6687,7 @@ snapshots:
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 20.19.41
+    optional: true
 
   '@types/yargs-parser@21.0.3': {}
 

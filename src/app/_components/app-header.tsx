@@ -19,6 +19,7 @@ const SECTION_TITLES: Record<AppSection, string> = {
   starred: "Starred",
   drafts: "Drafts",
   sent: "Sent",
+  trash: "Trash",
   calendar: "Calendar",
   settings: "Account",
   integrations: "Integrations",
@@ -74,7 +75,8 @@ export function AppHeader({
     section === "inbox" ||
     section === "starred" ||
     section === "drafts" ||
-    section === "sent";
+    section === "sent" ||
+    section === "trash";
 
   return (
     <header className="bg-background/95 flex h-14 shrink-0 items-center gap-3 border-b px-3 md:px-4">

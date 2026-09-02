@@ -25,6 +25,7 @@ const SECTION_PATHS: Record<AppSection, string> = {
   starred: "/mail/starred",
   drafts: "/mail/drafts",
   sent: "/mail/sent",
+  trash: "/mail/trash",
   calendar: "/calendar",
   settings: "/settings",
   integrations: "/settings/integrations",
@@ -208,7 +209,10 @@ export function MailPointApp({
           isSigningOut={isSigningOut}
           onSettings={() => handleNavigate("settings")}
           mailSearch={
-            activeSection === "inbox"
+            activeSection === "inbox" ||
+            activeSection === "starred" ||
+            activeSection === "sent" ||
+            activeSection === "trash"
               ? {
                   value: mailSearchInput,
                   onChange: setMailSearchInput,
@@ -252,6 +256,7 @@ export function MailPointApp({
           {(activeSection === "inbox" ||
             activeSection === "starred" ||
             activeSection === "sent" ||
+            activeSection === "trash" ||
             activeSection === "drafts") && (
             <GmailPanel
               view={activeSection}

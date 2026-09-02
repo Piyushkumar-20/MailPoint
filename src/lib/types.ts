@@ -8,3 +8,4 @@ export type Message = {
   content: string;
   confirmation?: AgentConfirmation;
 };
+

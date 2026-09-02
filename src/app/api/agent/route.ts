@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { runMailPointAgent } from "@/server/agent/agent";
 import { auth } from "@/server/lib/auth";
-import { getTenant } from "@/server/lib/tenant";
+import { getTenant, getTenantId } from "@/server/lib/tenant";
+import { createPendingConfirmation } from "@/server/agent/calendar-confirmation";
+import type { AgentResponse } from "@/lib/agent-types";
 
 type AgentRequestBody = {
   input?: unknown;
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
         ? body.timezone.trim()
         : "UTC";
 
+    const tenantId = await getTenantId(session.user.id);
     const corsair = await getTenant(session.user.id);
 
     const result = await runMailPointAgent(
@@ -63,9 +66,21 @@ export async function POST(request: Request) {
       },
     );
 
-    return NextResponse.json({
+    let confirmation;
+    if (result.proposal) {
+      confirmation = await createPendingConfirmation(
+        session.user.id,
+        tenantId,
+        result.proposal,
+      );
+    }
+
+    const responsePayload: AgentResponse = {
       output: result.finalOutput,
-    });
+      confirmation,
+    };
+
+    return NextResponse.json(responsePayload);
   } catch (error) {
     console.error("[Agent API]", error);
 
@@ -82,6 +97,19 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      error instanceof Error &&
+      error.message.toLowerCase().includes("request size limit")
+    ) {
+      return NextResponse.json(
+        {
+          error: "Request size limit exceeded. Please try a simpler or shorter request.",
+          code: "REQUEST_TOO_LARGE",
+        },
+        { status: 413 },
+      );
+    }
+
     return NextResponse.json(
       {
         error: "Failed to process agent request.",
@@ -90,3 +118,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

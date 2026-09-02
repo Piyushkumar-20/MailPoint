@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 
 import { postAgentRequest } from "@/lib/agent-client";
 import type { Message } from "@/app/_components/agent/types";
+import type { AgentConfirmation } from "@/lib/agent-types";
 
 import { AgentComposer } from "@/app/_components/agent/agent-composer";
 import { AgentConversation } from "@/app/_components/agent/agent-conversation";
@@ -25,6 +26,19 @@ export function AgentPanel({
   const [messages, setMessages] = useState<Message[]>([]);
   const [composerValue, setComposerValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleConfirmationUpdate = useCallback(
+    (messageId: string, updatedConfirmation: AgentConfirmation) => {
+      setMessages((currentMessages) =>
+        currentMessages.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, confirmation: updatedConfirmation }
+            : msg,
+        ),
+      );
+    },
+    [],
+  );
 
   const sendMessage = useCallback(
     async (rawInput: string) => {
@@ -59,6 +73,7 @@ export function AgentPanel({
             id: createMessageId(),
             role: "assistant",
             content: response.output,
+            confirmation: response.confirmation,
           },
         ]);
       } catch (error) {
@@ -107,6 +122,7 @@ export function AgentPanel({
         messages={messages}
         isLoading={isLoading}
         onSuggestion={sendMessage}
+        onConfirmationUpdate={handleConfirmationUpdate}
       />
 
       <div

@@ -1,215 +1,290 @@
-import { OpenAIAgentsProvider } from "@corsair-dev/mcp";
-import {
-  Agent,
-  run,
-  tool,
-  setDefaultOpenAIClient,
-  setOpenAIAPI,
-  setTracingDisabled,
-} from "@openai/agents";
 import OpenAI from "openai";
+import type { CalendarEventProposal } from "@/lib/agent-types";
 
-const groqClient = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+function getGroqClient() {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY environment variable is missing.");
+  }
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
+}
 
-setDefaultOpenAIClient(groqClient);
-setOpenAIAPI("chat_completions");
-setTracingDisabled(true);
 
 export type AgentContext = {
   timezone: string;
   currentDateTime: string;
 };
 
-type MailPointCorsair = Parameters<OpenAIAgentsProvider["build"]>[0]["corsair"];
+export type AgentRunResult = {
+  finalOutput: string;
+  proposal?: CalendarEventProposal;
+};
 
-export function createMailPointAgent(
-  corsair: MailPointCorsair,
-  context: AgentContext,
-) {
-  const provider = new OpenAIAgentsProvider();
+type MailPointCorsair = Record<string, unknown>;
 
-  const tools = provider.build({
-    corsair,
-    tool: (definition) =>
-      tool({
-        ...definition,
-        strict: true,
-      }),
-  });
-
-  for (const currentTool of tools as Array<{
-    name?: string;
-    parameters?: unknown;
-  }>) {
-    if (currentTool.name === "run_script") {
-      currentTool.parameters = {
+const agentTools: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "run_script",
+      description:
+        "Execute an async JavaScript snippet with `corsair` in scope to read Gmail messages/threads or Google Calendar events. Return only needed data.",
+      parameters: {
         type: "object",
         properties: {
           code: {
             type: "string",
+            description:
+              "JavaScript async snippet with `corsair` in scope. Return the data needed. Example: return await corsair.gmail.api.messages.list({ maxResults: 5 });",
           },
         },
         required: ["code"],
         additionalProperties: false,
-      };
-    }
-
-    if (currentTool.name === "get_schema") {
-      currentTool.parameters = {
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_calendar_event",
+      description:
+        "Propose creating a new Google Calendar event for inline user confirmation. Always use this instead of creating events directly.",
+      parameters: {
         type: "object",
         properties: {
-          path: {
+          summary: {
             type: "string",
+            description: "Title/summary of the calendar event",
+          },
+          description: {
+            type: "string",
+            description: "Optional description or agenda",
+          },
+          location: {
+            type: "string",
+            description: "Optional location",
+          },
+          start: {
+            type: "object",
+            properties: {
+              dateTime: {
+                type: "string",
+                description:
+                  "ISO 8601 start date-time with timezone offset (e.g. 2026-09-03T10:00:00+05:30)",
+              },
+              timeZone: {
+                type: "string",
+                description: "Timezone name",
+              },
+            },
+            required: ["dateTime"],
+            additionalProperties: false,
+          },
+          end: {
+            type: "object",
+            properties: {
+              dateTime: {
+                type: "string",
+                description:
+                  "ISO 8601 end date-time with timezone offset (e.g. 2026-09-03T11:00:00+05:30)",
+              },
+              timeZone: {
+                type: "string",
+                description: "Timezone name",
+              },
+            },
+            required: ["dateTime"],
+            additionalProperties: false,
+          },
+          attendees: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                email: { type: "string" },
+                displayName: { type: "string" },
+              },
+              required: ["email"],
+              additionalProperties: false,
+            },
+            description: "Optional list of attendee emails",
           },
         },
-        required: ["path"],
+        required: ["summary", "start", "end"],
         additionalProperties: false,
-      };
-    }
-
-    if (currentTool.name === "list_operations") {
-      currentTool.parameters = {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      };
-    }
-
-    if (currentTool.name === "corsair_setup") {
-      currentTool.parameters = {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      };
-    }
-  }
-
-  return new Agent({
-    name: "mailpoint-agent",
-    model: "openai/gpt-oss-120b",
-    instructions: `
-You are MailPoint AI.
-
-You help the authenticated user work with Gmail and Google Calendar
-through Corsair.
-
-USER DATE/TIME CONTEXT
-
-Current local date and time:
-${context.currentDateTime}
-
-User timezone:
-${context.timezone}
-
-DATE/TIME RULES
-
-1. Interpret relative dates such as "today", "tomorrow", "yesterday",
-   and weekdays using the user's local date above.
-2. Interpret clock times in the user's timezone.
-3. Do not interpret the user's requested local time as UTC.
-4. When creating calendar events, preserve the user's requested local
-   hour and minute and provide the correct timezone.
-5. If no duration is specified, use one hour.
-6. Never silently change the requested date or time.
-
-TOOLS
-
-Use the Corsair tools provided to you.
-
-IMPORTANT
-
-- Use the tools directly when the user's request requires Gmail or Calendar data.
-- Do not invent tool names.
-- Do not invent email or calendar data.
-- Do not claim an action succeeded unless the tool returned a successful result.
-- Use only the tools required by the request.
-- Do not repeatedly call a tool with the same arguments.
-- Minimize unnecessary tool calls.
-- If the user asks about Gmail and Calendar, use both when necessary.
-- If the request is Gmail-only, do not call Calendar tools.
-- If the request is Calendar-only, do not call Gmail tools.
-- Once the requested information or action result has been obtained, answer the user.
-- For state-changing Gmail or Calendar operations, let Corsair's permission
-  system handle the authorization/approval flow.
-- Do not create a second application-level confirmation or permission flow.
-- Do not expose internal reasoning, tool internals, or credentials.
-
-CORSAIR OPERATION GUIDANCE
-
-Use run_script for Corsair operations when appropriate.
-
-For Gmail, examples include:
-
-return await corsair.gmail.api.messages.list({
-  maxResults: 10,
-  q: "newer_than:30d"
-});
-
-return await corsair.gmail.api.messages.get({
-  id: "MESSAGE_ID",
-  format: "metadata",
-  metadataHeaders: ["Subject", "From", "Date"]
-});
-
-For Google Calendar, examples include:
-
-return await corsair.googlecalendar.api.events.list({
-  timeMin: "2026-09-01T00:00:00Z",
-  timeMax: "2026-09-08T23:59:59Z",
-  maxResults: 10
-});
-
-To create an event:
-
-return await corsair.googlecalendar.api.events.create({
-  event: {
-    summary: "Meeting Title",
-    description: "Meeting description",
-    start: {
-      dateTime: "2026-09-03T10:00:00+05:30",
-      timeZone: "Asia/Kolkata"
+      },
     },
-    end: {
-      dateTime: "2026-09-03T11:00:00+05:30",
-      timeZone: "Asia/Kolkata"
-    },
-    attendees: [{ email: "attendee@example.com" }]
   },
-  sendUpdates: "all"
-});
+];
 
-If a requested operation is not covered by these examples, use
-list_operations once if discovery is necessary. Do not call get_schema
-unless it is actually required.
+async function executeRunScript(
+  corsair: MailPointCorsair,
+  code: string,
+): Promise<string> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const fn = new Function(
+      "corsair",
+      `return (async () => { ${code} })()`,
+    ) as (ctx: MailPointCorsair) => Promise<unknown>;
 
-ERROR HANDLING
+    const rawResult = await fn(corsair);
 
-- Read tool errors carefully.
-- Retry at most once when a retry is useful.
-- Never enter a retry loop.
-- If Corsair reports that approval is required, do not claim that the
-  operation was completed. Clearly tell the user that approval is required.
+    if (rawResult === undefined || rawResult === null) {
+      return "null";
+    }
 
-RESPONSE RULES
+    let jsonStr = JSON.stringify(rawResult);
 
-- Be concise and accurate.
-- Summarize large result sets.
-- Do not explain tool usage unless the user asks.
-- Return the actual result of the requested operation.
-`,
-    tools,
-  });
+    // Context protection: limit tool response size
+    if (jsonStr.length > 2500) {
+      if (Array.isArray(rawResult)) {
+        jsonStr = JSON.stringify(rawResult.slice(0, 5));
+      } else if (rawResult && typeof rawResult === "object") {
+        const record = rawResult as Record<string, unknown>;
+        const obj: Record<string, unknown> = { ...record };
+        if (Array.isArray(record.messages)) obj.messages = record.messages.slice(0, 5);
+        if (Array.isArray(record.items)) obj.items = record.items.slice(0, 5);
+        if (Array.isArray(record.threads)) obj.threads = record.threads.slice(0, 5);
+        jsonStr = JSON.stringify(obj);
+      }
+
+      if (jsonStr.length > 2500) {
+        jsonStr = jsonStr.slice(0, 2500) + "... [truncated to save context]";
+      }
+    }
+
+    return jsonStr;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return `Error executing snippet: ${message}`;
+  }
 }
 
 export async function runMailPointAgent(
   corsair: MailPointCorsair,
   input: string,
   context: AgentContext,
-) {
-  const agent = createMailPointAgent(corsair, context);
+): Promise<AgentRunResult> {
+  const systemPrompt = `You are MailPoint AI, helping the authenticated user work with Gmail and Google Calendar through Corsair.
 
-  return run(agent, input);
+USER CONTEXT:
+- Local Date & Time: ${context.currentDateTime}
+- User Timezone: ${context.timezone}
+
+RULES:
+1. Interpret relative dates (today, tomorrow, weekdays) using the local date above.
+2. For Gmail requests (e.g. "show latest 5 emails"):
+   - Use run_script to query corsair.gmail.api.messages.list({ maxResults: 5 }) or get metadata.
+   - Summarize the retrieved emails clearly (Subject, From, Date, Snippet). Never hallucinate email data.
+3. For Calendar read requests (e.g. "what are my next 5 events"):
+   - Use run_script to query corsair.googlecalendar.api.events.list({ timeMin: new Date().toISOString(), maxResults: 5 }) or similar.
+   - Summarize the retrieved events clearly. Never hallucinate calendar data.
+4. For Calendar write/create requests (e.g. "Create a meeting tomorrow at 10 AM called Project Review"):
+   - Do NOT call events.create in run_script.
+   - ALWAYS call propose_calendar_event with summary, start (ISO with offset), end (ISO with offset).
+   - If no duration is given, default to 1 hour.
+   - Clearly inform the user that the event proposal is ready for their confirmation.
+5. Return concise, helpful responses. Do not reveal tool internals unless asked.`;
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: input },
+  ];
+
+  let proposal: CalendarEventProposal | undefined;
+  let finalOutput = "";
+  const maxTurns = 5;
+
+  const groq = getGroqClient();
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    const approxTokens = Math.ceil(JSON.stringify(messages).length / 4);
+    console.log(
+      `[MailPoint AI] Turn ${turn + 1}/${maxTurns}: ~${approxTokens} tokens (${messages.length} messages)`,
+    );
+
+    let completion: OpenAI.Chat.ChatCompletion;
+    try {
+      completion = await groq.chat.completions.create({
+        model: "openai/gpt-oss-120b",
+        messages,
+        tools: agentTools,
+        temperature: 0.1,
+        max_completion_tokens: 1024,
+      });
+
+    } catch (err: unknown) {
+      console.error("[MailPoint AI Groq Error]", err);
+      const errObj = err as { status?: number; message?: string };
+      if (errObj?.status === 413 || errObj?.message?.includes("Request too large")) {
+        throw new Error(
+          "Request size limit reached. Please try a simpler request.",
+        );
+      }
+      throw err;
+    }
+
+    const choice = completion.choices?.[0];
+    if (!choice?.message) {
+      break;
+    }
+
+    const assistantMsg = choice.message;
+    messages.push(assistantMsg);
+
+    if (assistantMsg.content) {
+      finalOutput = assistantMsg.content;
+    }
+
+    if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+      for (const toolCall of assistantMsg.tool_calls) {
+        if (toolCall.type !== "function") continue;
+        const fnName = toolCall.function.name;
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(toolCall.function.arguments || "{}") as Record<string, unknown>;
+        } catch {
+          args = {};
+        }
+
+        if (fnName === "propose_calendar_event") {
+          proposal = args as unknown as CalendarEventProposal;
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({
+              status: "proposal_recorded",
+              message:
+                "The proposal has been saved. Please inform the user with a clean summary of the proposed event.",
+              proposal,
+            }),
+          });
+        } else if (fnName === "run_script") {
+          const codeSnippet = typeof args.code === "string" ? args.code : "";
+          const result = await executeRunScript(corsair, codeSnippet);
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: result,
+          });
+        }
+      }
+    } else {
+      // Model responded without further tool calls
+      break;
+    }
+  }
+
+  return {
+    finalOutput:
+      finalOutput ||
+      (proposal
+        ? `I have prepared the calendar event "${proposal.summary}". Please confirm to add it to your Google Calendar.`
+        : "I have processed your request."),
+    proposal,
+  };
 }

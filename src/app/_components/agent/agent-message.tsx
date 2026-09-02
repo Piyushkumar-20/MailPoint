@@ -2,9 +2,17 @@ import { Bot } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { Message } from "@/app/_components/agent/types";
+import type { AgentConfirmation } from "@/lib/agent-types";
 import { AgentMarkdown } from "@/app/_components/agent/agent-markdown";
+import { AgentConfirmationCard } from "@/app/_components/agent/agent-confirmation-card";
 
-export function AgentMessage({ message }: { message: Message }) {
+export function AgentMessage({
+  message,
+  onConfirmationUpdate,
+}: {
+  message: Message;
+  onConfirmationUpdate?: (messageId: string, updated: AgentConfirmation) => void;
+}) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -30,8 +38,18 @@ export function AgentMessage({ message }: { message: Message }) {
           MailPoint AI
         </div>
 
-        <AgentMarkdown content={message.content} />
+        {message.content && <AgentMarkdown content={message.content} />}
+
+        {message.confirmation && (
+          <AgentConfirmationCard
+            confirmation={message.confirmation}
+            onStatusChange={(updated) =>
+              onConfirmationUpdate?.(message.id, updated)
+            }
+          />
+        )}
       </div>
     </div>
   );
 }
+

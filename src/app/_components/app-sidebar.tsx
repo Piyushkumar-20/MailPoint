@@ -14,6 +14,7 @@ import {
   Send,
   Settings,
   Star,
+  Trash2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ export type AppSection =
   | "starred"
   | "drafts"
   | "sent"
+  | "trash"
   | "calendar"
   | "settings"
   | "integrations";
@@ -55,6 +57,7 @@ const MAIL_ITEMS: NavItem[] = [
   { section: "starred", label: "Starred", icon: Star },
   { section: "drafts", label: "Drafts", icon: PenSquare },
   { section: "sent", label: "Sent", icon: Send },
+  { section: "trash", label: "Trash", icon: Trash2 },
 ];
 
 const DASHBOARD_ITEMS: NavItem[] = [
