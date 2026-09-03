@@ -1,13 +1,19 @@
-﻿import {
+import {
   agentResponseSchema,
   confirmResponseSchema,
   type AgentResponse,
   type ConfirmResponse,
 } from "@/lib/agent-types";
 
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type AgentRequest = {
   input: string;
   timezone: string;
+  history?: ChatHistoryMessage[];
 };
 
 export class AgentClientError extends Error {
@@ -43,6 +49,7 @@ function getAgentErrorMessage(status: number) {
 export async function postAgentRequest(
   input: string,
   timezone: string,
+  history?: ChatHistoryMessage[],
 ): Promise<AgentResponse> {
   let response: Response;
 
@@ -56,6 +63,7 @@ export async function postAgentRequest(
       body: JSON.stringify({
         input,
         timezone,
+        history,
       } satisfies AgentRequest),
     });
   } catch {

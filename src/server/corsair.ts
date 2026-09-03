@@ -49,6 +49,10 @@ export const corsair = createCorsair({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       permissions: {
         mode: "strict",
+        overrides: {
+          "events.create": "allow",
+          "events.delete": "allow",
+        },
       },
     }),
   ],

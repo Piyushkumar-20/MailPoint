@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/server/lib/auth";
 import { getTenantId } from "@/server/lib/tenant";
 import { corsair } from "@/server/corsair";
@@ -74,8 +74,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       status: "confirmed",
-      message: "Calendar event scheduled successfully!",
+      message: result.message ?? "Calendar event scheduled successfully!",
       event: result.event,
+      emailResult: result.emailResult,
     });
   } catch (error: unknown) {
     console.error("[Agent Confirm API]", error);

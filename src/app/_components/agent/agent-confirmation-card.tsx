@@ -1,10 +1,21 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
-import { Calendar, Clock, MapPin, Users, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Users,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { postConfirmation } from "@/lib/agent-client";
 import type { AgentConfirmation } from "@/lib/agent-types";
+import { api } from "@/trpc/react";
+import { cn } from "@/lib/utils";
 
 function formatEventTime(startStr: string, endStr: string, timeZone?: string) {
   try {
@@ -42,12 +53,15 @@ export function AgentConfirmationCard({
   onStatusChange,
 }: {
   confirmation: AgentConfirmation;
-  onStatusChange?: (updated: AgentConfirmation) => void;
+  onStatusChange?: (updated: AgentConfirmation, outcomeMessage?: string) => void;
 }) {
   const [status, setStatus] = useState(confirmation.status);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [outcomeMessage, setOutcomeMessage] = useState<string | null>(null);
+  const [isEmailError, setIsEmailError] = useState(false);
 
+  const utils = api.useUtils();
   const { proposal } = confirmation;
 
   const handleConfirm = async () => {
@@ -59,11 +73,24 @@ export function AgentConfirmationCard({
       const res = await postConfirmation(confirmation.token, "confirm");
       if (res.success && res.status === "confirmed") {
         setStatus("confirmed");
+        setOutcomeMessage(res.message);
+        if (res.emailResult?.sent === false) {
+          setIsEmailError(true);
+        }
+
+        // Synchronize MailPoint calendar UI cache so the newly created event appears immediately
+        try {
+          await utils.calendar.searchEvents.invalidate();
+          await utils.calendar.invalidate();
+        } catch {
+          // ignore cache invalidation errors
+        }
+
         const updated: AgentConfirmation = {
           ...confirmation,
           status: "confirmed",
         };
-        onStatusChange?.(updated);
+        onStatusChange?.(updated, res.message);
       } else {
         setError(res.message || "Failed to confirm event creation.");
       }
@@ -89,7 +116,7 @@ export function AgentConfirmationCard({
           ...confirmation,
           status: "cancelled",
         };
-        onStatusChange?.(updated);
+        onStatusChange?.(updated, res.message);
       } else {
         setError(res.message || "Failed to cancel proposal.");
       }
@@ -157,9 +184,12 @@ export function AgentConfirmationCard({
       {status === "pending" && (
         <div className="mt-4 flex items-center gap-2 pt-1">
           <Button
+            type="button"
             size="sm"
             onClick={handleConfirm}
             disabled={isLoading}
+            aria-label="Confirm this"
+            data-testid="confirm-button"
             className="h-8 px-4 text-xs font-medium"
           >
             {isLoading ? (
@@ -168,11 +198,12 @@ export function AgentConfirmationCard({
                 Scheduling...
               </>
             ) : (
-              "Confirm"
+              "Confirm this"
             )}
           </Button>
 
           <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={handleCancel}
@@ -185,9 +216,22 @@ export function AgentConfirmationCard({
       )}
 
       {status === "confirmed" && (
-        <div className="mt-3 flex items-center gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="size-4" />
-          <span>Calendar event scheduled successfully!</span>
+        <div
+          className={cn(
+            "mt-3 flex items-start gap-2 rounded-md px-3 py-2.5 text-xs font-medium",
+            isEmailError
+              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+          )}
+        >
+          {isEmailError ? (
+            <AlertCircle className="size-4 shrink-0 mt-0.5" />
+          ) : (
+            <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
+          )}
+          <span className="leading-relaxed">
+            {outcomeMessage ?? "Calendar event scheduled successfully!"}
+          </span>
         </div>
       )}
 

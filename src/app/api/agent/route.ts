@@ -9,6 +9,7 @@ import type { AgentResponse } from "@/lib/agent-types";
 type AgentRequestBody = {
   input?: unknown;
   timezone?: unknown;
+  history?: { role: "user" | "assistant"; content: string }[];
 };
 
 function getCurrentDateTime(timezone: string) {
@@ -54,6 +55,16 @@ export async function POST(request: Request) {
         ? body.timezone.trim()
         : "UTC";
 
+    // Sanitize history: only accept plain user/assistant text turns
+    const history = Array.isArray(body.history)
+      ? body.history.filter(
+          (h): h is { role: "user" | "assistant"; content: string } =>
+            (h.role === "user" || h.role === "assistant") &&
+            typeof h.content === "string" &&
+            h.content.trim().length > 0,
+        )
+      : undefined;
+
     const tenantId = await getTenantId(session.user.id);
     const corsair = await getTenant(session.user.id);
 
@@ -63,6 +74,7 @@ export async function POST(request: Request) {
       {
         timezone,
         currentDateTime: getCurrentDateTime(timezone),
+        history,
       },
     );
 

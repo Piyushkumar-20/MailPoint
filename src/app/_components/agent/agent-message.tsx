@@ -11,7 +11,11 @@ export function AgentMessage({
   onConfirmationUpdate,
 }: {
   message: Message;
-  onConfirmationUpdate?: (messageId: string, updated: AgentConfirmation) => void;
+  onConfirmationUpdate?: (
+    messageId: string,
+    updated: AgentConfirmation,
+    outcomeMessage?: string,
+  ) => void;
 }) {
   if (message.role === "user") {
     return (
@@ -43,8 +47,8 @@ export function AgentMessage({
         {message.confirmation && (
           <AgentConfirmationCard
             confirmation={message.confirmation}
-            onStatusChange={(updated) =>
-              onConfirmationUpdate?.(message.id, updated)
+            onStatusChange={(updated, outcomeMessage) =>
+              onConfirmationUpdate?.(message.id, updated, outcomeMessage)
             }
           />
         )}

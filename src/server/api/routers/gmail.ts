@@ -254,11 +254,53 @@ export const gmailRouter = createTRPCRouter({
         messages.map(async (message) => {
           if (!message.id) return null;
 
+          // ── 1. Try the Corsair DB cache first ─────────────────────────────
+          try {
+            const cached = await tenant.gmail.db.messages.findByEntityId(message.id);
+            if (cached) {
+              const d = cached.data as {
+                subject?: string;
+                from?: string;
+                to?: string;
+                snippet?: string;
+                internalDate?: string | null;
+                threadId?: string;
+                labelIds?: string[];
+                payload?: { headers?: Array<{ name?: string; value?: string }> };
+              };
+
+              const cacheHeaders = d.payload?.headers;
+              const subject = d.subject ?? getHeader(cacheHeaders, "Subject");
+              const from = d.from ?? getHeader(cacheHeaders, "From");
+              const to = d.to ?? getHeader(cacheHeaders, "To");
+
+              if (subject || from) {
+                return {
+                  id: cached.entity_id,
+                  threadId: d.threadId ?? "",
+                  snippet: d.snippet ?? "",
+                  subject,
+                  from,
+                  to,
+                  date: d.internalDate ?? null,
+                  timestamp: messageTimestamp(d.internalDate ?? null),
+                  labelIds: Array.isArray(d.labelIds) ? d.labelIds : [],
+                };
+              }
+            }
+          } catch {
+            // cache miss or DB error — fall through to live API
+          }
+
+          // ── 2. Fall back to live Gmail API ────────────────────────────────
+          // NOTE: Do NOT pass metadataHeaders here. @corsair-dev/gmail comma-joins
+          // metadataHeaders (e.g. "Subject,From,To"), which Gmail API treats as a single
+          // header name, causing it to return zero headers. Calling format: "metadata"
+          // without metadataHeaders returns all headers without the body payload.
           try {
             const msg = await tenant.gmail.api.messages.get({
               id: message.id,
               format: "metadata",
-              metadataHeaders: ["Subject", "From", "To"],
             });
 
             const headers = msg.payload?.headers;

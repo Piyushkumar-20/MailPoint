@@ -17,7 +17,11 @@ export function AgentConversation({
   messages: Message[];
   isLoading: boolean;
   onSuggestion: (prompt: string) => void;
-  onConfirmationUpdate?: (messageId: string, updated: AgentConfirmation) => void;
+  onConfirmationUpdate?: (
+    messageId: string,
+    updated: AgentConfirmation,
+    outcomeMessage?: string,
+  ) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 

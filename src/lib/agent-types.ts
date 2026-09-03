@@ -63,8 +63,16 @@ export const confirmResponseSchema = z.object({
       htmlLink: z.string().optional(),
     })
     .optional(),
+  emailResult: z
+    .object({
+      sent: z.boolean(),
+      recipients: z.array(z.string()).optional(),
+      error: z.string().optional(),
+    })
+    .optional(),
   error: z.string().optional(),
 });
 
 export type ConfirmResponse = z.infer<typeof confirmResponseSchema>;
+
 
