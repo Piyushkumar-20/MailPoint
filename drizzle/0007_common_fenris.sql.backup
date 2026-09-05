@@ -1,0 +1,180 @@
+CREATE TYPE "public"."billing_event_status" AS ENUM('pending', 'processed', 'failed');--> statement-breakpoint
+CREATE TYPE "public"."billing_interval" AS ENUM('month', 'year');--> statement-breakpoint
+CREATE TYPE "public"."entitlement_source" AS ENUM('system', 'self_paid', 'admin_granted');--> statement-breakpoint
+CREATE TYPE "public"."entitlement_status" AS ENUM('active', 'revoked', 'expired');--> statement-breakpoint
+CREATE TYPE "public"."payment_status" AS ENUM('created', 'authorized', 'captured', 'failed', 'refunded');--> statement-breakpoint
+CREATE TYPE "public"."plan_key" AS ENUM('free', 'pro');--> statement-breakpoint
+CREATE TYPE "public"."subscription_status" AS ENUM('created', 'authenticated', 'active', 'pending', 'paused', 'halted', 'cancelled', 'completed', 'expired');--> statement-breakpoint
+CREATE TABLE "ai_usage_daily" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"usage_date" date NOT NULL,
+	"request_count" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "ai_usage_daily_tenant_date_unique" UNIQUE("tenant_id","usage_date")
+);
+--> statement-breakpoint
+CREATE TABLE "billing_events" (
+	"id" text PRIMARY KEY NOT NULL,
+	"provider" text DEFAULT 'razorpay' NOT NULL,
+	"provider_event_id" text NOT NULL,
+	"event_type" text NOT NULL,
+	"status" "billing_event_status" DEFAULT 'pending' NOT NULL,
+	"signature_verified" boolean DEFAULT false NOT NULL,
+	"payload" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"processed_at" timestamp with time zone,
+	"attempt_count" integer DEFAULT 0 NOT NULL,
+	"error" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "billing_events_provider_event_unique" UNIQUE("provider","provider_event_id")
+);
+--> statement-breakpoint
+CREATE TABLE "email_classifications" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"message_id" text NOT NULL,
+	"priority" text NOT NULL,
+	"confidence" real NOT NULL,
+	"reason" text NOT NULL,
+	"category" text,
+	"user_override" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "email_classifications_tenant_message_unique" UNIQUE("tenant_id","message_id")
+);
+--> statement-breakpoint
+CREATE TABLE "email_embeddings" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"message_id" text NOT NULL,
+	"embedding" jsonb NOT NULL,
+	"chunk_content" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "email_embeddings_tenant_message_unique" UNIQUE("tenant_id","message_id")
+);
+--> statement-breakpoint
+CREATE TABLE "entitlement_audit_logs" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"entitlement_id" text,
+	"actor_user_id" text,
+	"action" text NOT NULL,
+	"source" "entitlement_source" NOT NULL,
+	"reason" text,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "entitlements" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"plan_id" text NOT NULL,
+	"source" "entitlement_source" NOT NULL,
+	"status" "entitlement_status" DEFAULT 'active' NOT NULL,
+	"subscription_id" text,
+	"granted_by_user_id" text,
+	"starts_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"ends_at" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "entitlements_tenant_id_unique" UNIQUE("tenant_id")
+);
+--> statement-breakpoint
+CREATE TABLE "payments" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"subscription_id" text,
+	"provider" text DEFAULT 'razorpay' NOT NULL,
+	"provider_payment_id" text,
+	"provider_order_id" text,
+	"provider_invoice_id" text,
+	"amount" integer NOT NULL,
+	"currency" text DEFAULT 'INR' NOT NULL,
+	"status" "payment_status" NOT NULL,
+	"method" text,
+	"error_code" text,
+	"error_description" text,
+	"paid_at" timestamp with time zone,
+	"raw_data" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "payments_provider_payment_unique" UNIQUE("provider","provider_payment_id")
+);
+--> statement-breakpoint
+CREATE TABLE "plans" (
+	"id" text PRIMARY KEY NOT NULL,
+	"key" "plan_key" NOT NULL,
+	"name" text NOT NULL,
+	"price_amount" integer DEFAULT 0 NOT NULL,
+	"currency" text DEFAULT 'INR' NOT NULL,
+	"billing_interval" "billing_interval" DEFAULT 'month' NOT NULL,
+	"billing_interval_count" integer DEFAULT 1 NOT NULL,
+	"ai_daily_limit" integer,
+	"provider" text DEFAULT 'razorpay' NOT NULL,
+	"provider_plan_id" text,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "plans_key_unique" UNIQUE("key"),
+	CONSTRAINT "plans_provider_plan_unique" UNIQUE("provider","provider_plan_id")
+);
+--> statement-breakpoint
+CREATE TABLE "subscriptions" (
+	"id" text PRIMARY KEY NOT NULL,
+	"tenant_id" text NOT NULL,
+	"plan_id" text NOT NULL,
+	"provider" text DEFAULT 'razorpay' NOT NULL,
+	"provider_subscription_id" text,
+	"provider_customer_id" text,
+	"provider_plan_id" text,
+	"status" "subscription_status" DEFAULT 'created' NOT NULL,
+	"quantity" integer DEFAULT 1 NOT NULL,
+	"total_count" integer,
+	"paid_count" integer DEFAULT 0 NOT NULL,
+	"current_period_start" timestamp with time zone,
+	"current_period_end" timestamp with time zone,
+	"start_at" timestamp with time zone,
+	"charge_at" timestamp with time zone,
+	"end_at" timestamp with time zone,
+	"cancel_at_period_end" boolean DEFAULT false NOT NULL,
+	"cancelled_at" timestamp with time zone,
+	"ended_at" timestamp with time zone,
+	"notes" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "subscriptions_provider_subscription_unique" UNIQUE("provider","provider_subscription_id")
+);
+--> statement-breakpoint
+ALTER TABLE "ai_usage_daily" ADD CONSTRAINT "ai_usage_daily_tenant_id_tenant_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlement_audit_logs" ADD CONSTRAINT "entitlement_audit_logs_tenant_id_tenant_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlement_audit_logs" ADD CONSTRAINT "entitlement_audit_logs_entitlement_id_entitlements_id_fk" FOREIGN KEY ("entitlement_id") REFERENCES "public"."entitlements"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlement_audit_logs" ADD CONSTRAINT "entitlement_audit_logs_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_tenant_id_tenant_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_plan_id_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_subscription_id_subscriptions_id_fk" FOREIGN KEY ("subscription_id") REFERENCES "public"."subscriptions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entitlements" ADD CONSTRAINT "entitlements_granted_by_user_id_users_id_fk" FOREIGN KEY ("granted_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_tenant_id_tenant_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_subscription_id_subscriptions_id_fk" FOREIGN KEY ("subscription_id") REFERENCES "public"."subscriptions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_tenant_id_tenant_id_fk" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenant"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_plan_id_plans_id_fk" FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ai_usage_daily_tenant_date_idx" ON "ai_usage_daily" USING btree ("tenant_id","usage_date");--> statement-breakpoint
+CREATE INDEX "billing_events_provider_type_idx" ON "billing_events" USING btree ("provider","event_type");--> statement-breakpoint
+CREATE INDEX "billing_events_status_idx" ON "billing_events" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "email_classifications_tenant_priority_idx" ON "email_classifications" USING btree ("tenant_id","priority");--> statement-breakpoint
+CREATE INDEX "email_embeddings_tenant_idx" ON "email_embeddings" USING btree ("tenant_id");--> statement-breakpoint
+CREATE INDEX "entitlement_audit_logs_tenant_idx" ON "entitlement_audit_logs" USING btree ("tenant_id");--> statement-breakpoint
+CREATE INDEX "entitlement_audit_logs_entitlement_idx" ON "entitlement_audit_logs" USING btree ("entitlement_id");--> statement-breakpoint
+CREATE INDEX "entitlement_audit_logs_actor_idx" ON "entitlement_audit_logs" USING btree ("actor_user_id");--> statement-breakpoint
+CREATE INDEX "entitlements_plan_idx" ON "entitlements" USING btree ("plan_id");--> statement-breakpoint
+CREATE INDEX "entitlements_status_idx" ON "entitlements" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "entitlements_subscription_idx" ON "entitlements" USING btree ("subscription_id");--> statement-breakpoint
+CREATE INDEX "payments_tenant_idx" ON "payments" USING btree ("tenant_id");--> statement-breakpoint
+CREATE INDEX "payments_subscription_idx" ON "payments" USING btree ("subscription_id");--> statement-breakpoint
+CREATE INDEX "payments_provider_order_idx" ON "payments" USING btree ("provider","provider_order_id");--> statement-breakpoint
+CREATE INDEX "subscriptions_tenant_idx" ON "subscriptions" USING btree ("tenant_id");--> statement-breakpoint
+CREATE INDEX "subscriptions_tenant_status_idx" ON "subscriptions" USING btree ("tenant_id","status");--> statement-breakpoint
+CREATE INDEX "subscriptions_provider_customer_idx" ON "subscriptions" USING btree ("provider","provider_customer_id");

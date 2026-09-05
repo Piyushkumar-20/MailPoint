@@ -1,4 +1,5 @@
 import { calendarRouter } from "@/server/api/routers/calendar";
+import { billingRouter } from "@/server/api/routers/billing";
 import { gmailRouter } from "@/server/api/routers/gmail";
 import { intelligenceRouter } from "@/server/api/routers/intelligence";
 import { postRouter } from "@/server/api/routers/post";
@@ -13,6 +14,7 @@ export const appRouter = createTRPCRouter({
   post: postRouter,
   gmail: gmailRouter,
   calendar: calendarRouter,
+  billing: billingRouter,
   intelligence: intelligenceRouter,
 });
 

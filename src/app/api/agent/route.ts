@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { runMailPointAgent } from "@/server/agent/agent";
 import { auth } from "@/server/lib/auth";
 import { getTenant, getTenantId } from "@/server/lib/tenant";
+import { getEntitlementByTenantId } from "@/server/lib/entitlements";
+import { consumeAiRequest, AiDailyQuotaExceededError } from "@/server/lib/ai-usage";
 import { createPendingConfirmation } from "@/server/agent/calendar-confirmation";
 import type { AgentResponse } from "@/lib/agent-types";
 
@@ -66,6 +68,29 @@ export async function POST(request: Request) {
       : undefined;
 
     const tenantId = await getTenantId(session.user.id);
+    const entitlement = await getEntitlementByTenantId(tenantId);
+
+    if (!entitlement) {
+      return NextResponse.json(
+        {
+          error: "Unable to determine your MailPoint plan.",
+          code: "ENTITLEMENT_UNAVAILABLE",
+        },
+        { status: 503 },
+      );
+    }
+
+    // Free-tier AI requests are metered here, at the user-facing AI entry
+    // point. Internal agent turns and tool/MCP calls do not consume extra
+    // requests. Pro (aiDailyLimit === null) is not metered by this quota.
+    if (entitlement.aiDailyLimit !== null) {
+      await consumeAiRequest({
+        tenantId,
+        timeZone: timezone,
+        dailyLimit: entitlement.aiDailyLimit,
+      });
+    }
+
     const corsair = await getTenant(session.user.id);
 
     const result = await runMailPointAgent(
@@ -94,6 +119,19 @@ export async function POST(request: Request) {
 
     return NextResponse.json(responsePayload);
   } catch (error) {
+    if (error instanceof AiDailyQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: "You have reached the Free plan's 10 AI requests per day limit. Upgrade to Pro for unlimited AI requests.",
+          code: "AI_DAILY_LIMIT_EXCEEDED",
+          usageDate: error.usageDate,
+          requestCount: error.requestCount,
+          limit: error.limit,
+        },
+        { status: 429 },
+      );
+    }
+
     console.error("[Agent API]", error);
 
     if (

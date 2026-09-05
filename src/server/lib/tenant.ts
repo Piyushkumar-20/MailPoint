@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { tenant, tenantMembers } from "@/server/db/schema";
 import { corsair } from "@/server/corsair";
+import { ensureFreeEntitlement } from "@/server/lib/entitlements";
 
 export async function getTenantId(userId: string) {
   const membership = await db.query.tenantMembers.findFirst({
@@ -23,7 +24,10 @@ export async function getTenantId(userId: string) {
     });
   }
 
-  return membership?.tenantId ?? userId;
+  const tenantId = membership?.tenantId ?? userId;
+  await ensureFreeEntitlement(tenantId);
+
+  return tenantId;
 }
 
 export async function getTenant(userId: string) {

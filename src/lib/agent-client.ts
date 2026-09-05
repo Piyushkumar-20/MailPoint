@@ -26,7 +26,29 @@ export class AgentClientError extends Error {
   }
 }
 
-function getAgentErrorMessage(status: number) {
+async function getAgentErrorMessage(response: Response) {
+  let data: unknown;
+
+  try {
+    data = await response.clone().json();
+  } catch {
+    data = undefined;
+  }
+
+  if (data && typeof data === "object") {
+    const errorData = data as { code?: unknown; error?: unknown };
+    if (
+      errorData.code === "AI_DAILY_LIMIT_EXCEEDED" &&
+      typeof errorData.error === "string"
+    ) {
+      return errorData.error;
+    }
+  }
+
+  return getGenericAgentErrorMessage(response.status);
+}
+
+function getGenericAgentErrorMessage(status: number) {
   if (status === 400) {
     return "MailPoint needs a valid message before it can help.";
   }
@@ -39,7 +61,11 @@ function getAgentErrorMessage(status: number) {
     return "Request size limit exceeded. Please try a simpler or shorter request.";
   }
 
-  if (status === 429 || status === 503) {
+  if (status === 429) {
+    return "MailPoint AI request limit reached. Please try again tomorrow or upgrade to Pro.";
+  }
+
+  if (status === 503) {
     return "MailPoint AI is temporarily unavailable. Please try again later.";
   }
 
@@ -74,7 +100,7 @@ export async function postAgentRequest(
 
   if (!response.ok) {
     throw new AgentClientError(
-      getAgentErrorMessage(response.status),
+      await getAgentErrorMessage(response),
       response.status,
     );
   }

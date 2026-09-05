@@ -31,6 +31,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { MobileQuickActions } from "@/components/mobile-quick-actions";
 import { ShortcutsHelpDialog } from "@/components/shortcuts-help-dialog";
 import { Button } from "@/components/ui/button";
+import { BillingCard } from "@/app/_components/billing-card";
 import { ActionProvider, useActions } from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
@@ -64,27 +65,31 @@ function SettingsPanel({
 }) {
   return (
     <div className="mx-auto max-w-3xl px-6 py-6">
-      <div className="bg-card text-card-foreground rounded-lg border p-5">
-        <h2 className="mb-4 text-sm font-semibold">Account</h2>
-        <dl className="flex flex-col gap-3 text-sm">
-          <div className="flex justify-between border-b pb-3">
-            <dt className="text-muted-foreground">Name</dt>
-            <dd>{user?.name ?? "-"}</dd>
-          </div>
-          <div className="flex justify-between border-b pb-3">
-            <dt className="text-muted-foreground">Email</dt>
-            <dd>{user?.email ?? "-"}</dd>
-          </div>
-        </dl>
-        <Button
-          type="button"
-          onClick={onSignOut}
-          disabled={isSigningOut}
-          variant="outline"
-          className="mt-4"
-        >
-          {isSigningOut ? "Signing out…" : "Sign out"}
-        </Button>
+      <div className="space-y-4">
+        <div className="bg-card text-card-foreground rounded-lg border p-5">
+          <h2 className="mb-4 text-sm font-semibold">Account</h2>
+          <dl className="flex flex-col gap-3 text-sm">
+            <div className="flex justify-between border-b pb-3">
+              <dt className="text-muted-foreground">Name</dt>
+              <dd>{user?.name ?? "-"}</dd>
+            </div>
+            <div className="flex justify-between border-b pb-3">
+              <dt className="text-muted-foreground">Email</dt>
+              <dd>{user?.email ?? "-"}</dd>
+            </div>
+          </dl>
+          <Button
+            type="button"
+            onClick={onSignOut}
+            disabled={isSigningOut}
+            variant="outline"
+            className="mt-4"
+          >
+            {isSigningOut ? "Signing out…" : "Sign out"}
+          </Button>
+        </div>
+
+        <BillingCard user={user} />
       </div>
     </div>
   );
