@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Menu, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Command, HelpCircle, Menu, Plus } from "lucide-react";
 
+import { useActions } from "@/lib/actions/action-context";
 import {
   AccountMenu,
   type SidebarUser,
@@ -85,6 +86,8 @@ export function AppHeader({
     section === "sent" ||
     section === "trash";
 
+  const { openCommandPalette, openShortcutsHelp } = useActions();
+
   return (
     <header className="bg-background/95 flex h-14 shrink-0 items-center gap-3 border-b px-3 md:px-4">
       <button
@@ -166,6 +169,43 @@ export function AppHeader({
           </Button>
         </div>
       )}
+
+      {/* Command Palette Trigger (Desktop) */}
+      <button
+        type="button"
+        onClick={openCommandPalette}
+        className="text-muted-foreground hover:bg-muted hover:text-foreground hidden md:flex h-8 items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 text-xs transition-colors shadow-2xs hover:border-border"
+        aria-label="Open commands (⌘K)"
+        title="Open commands (⌘K)"
+      >
+        <Command className="h-3.5 w-3.5" />
+        <span className="text-muted-foreground">Commands</span>
+        <kbd className="bg-background text-muted-foreground rounded border px-1 font-mono text-[10px]">
+          ⌘K
+        </kbd>
+      </button>
+
+      {/* Command Palette Trigger (Mobile/Tablet) */}
+      <button
+        type="button"
+        onClick={openCommandPalette}
+        className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md md:hidden"
+        aria-label="Open commands"
+        title="Commands"
+      >
+        <Command className="h-4 w-4" />
+      </button>
+
+      {/* Shortcuts & Productivity Help Trigger */}
+      <button
+        type="button"
+        onClick={openShortcutsHelp}
+        className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md"
+        aria-label="Keyboard shortcuts and productivity"
+        title="Productivity Help (?)"
+      >
+        <HelpCircle className="h-4 w-4" />
+      </button>
 
       <ModeToggle />
 

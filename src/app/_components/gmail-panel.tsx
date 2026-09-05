@@ -45,6 +45,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PriorityBadge, type PriorityType } from "@/components/priority-badge";
 import type { PriorityFilterOption } from "@/components/search-bar";
+import { useActions } from "@/lib/actions/action-context";
 
 type ComposerMode = "compose" | "reply" | "forward";
 
@@ -148,10 +149,14 @@ export function GmailPanel({
   const [toast, setToast] = useState<ToastState>(null);
 
   // Intelligence & Sorting states
-  const [sortMode, setSortMode] = useState<"date-desc" | "priority-desc" | "date-asc">("date-desc");
-  const [internalPriorityFilter, setInternalPriorityFilter] = useState<PriorityFilterOption>("all");
+  const [sortMode, setSortMode] = useState<
+    "date-desc" | "priority-desc" | "date-asc"
+  >("date-desc");
+  const [internalPriorityFilter, setInternalPriorityFilter] =
+    useState<PriorityFilterOption>("all");
   const activePriorityFilter = priorityFilter ?? internalPriorityFilter;
-  const setActivePriorityFilter = onPriorityFilterChange ?? setInternalPriorityFilter;
+  const setActivePriorityFilter =
+    onPriorityFilterChange ?? setInternalPriorityFilter;
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(30);
@@ -209,7 +214,8 @@ export function GmailPanel({
 
   // Check if intelligent search (hybrid or semantic) is requested
   const isSearchActive = Boolean(searchQuery.trim());
-  const isSemanticOrHybridSearch = isSearchActive && (searchMode === "hybrid" || searchMode === "semantic");
+  const isSemanticOrHybridSearch =
+    isSearchActive && (searchMode === "hybrid" || searchMode === "semantic");
 
   // 1. Intelligent Search Query (handles semantic & hybrid modes)
   const intelligentSearch = api.intelligence.searchEmails.useQuery(
@@ -278,7 +284,9 @@ export function GmailPanel({
 
     const unclassified = rawEmailsList.filter((email) => {
       const isClassified = Boolean(classificationsQuery.data[email.id]);
-      const isAlreadyDispatched = dispatchedClassificationRef.current.has(email.id);
+      const isAlreadyDispatched = dispatchedClassificationRef.current.has(
+        email.id,
+      );
       return !isClassified && !isAlreadyDispatched;
     });
 
@@ -302,15 +310,16 @@ export function GmailPanel({
   }, [classificationsQuery.data, rawEmailsList, classifyBatch]);
 
   // 5. User manual priority override mutation
-  const overridePriorityMutation = api.intelligence.overridePriority.useMutation({
-    onSuccess: async () => {
-      await utils.intelligence.getClassifications.invalidate();
-      setToast({
-        message: "Email priority updated.",
-        subMessage: "Your manual preference is saved.",
-      });
-    },
-  });
+  const overridePriorityMutation =
+    api.intelligence.overridePriority.useMutation({
+      onSuccess: async () => {
+        await utils.intelligence.getClassifications.invalidate();
+        setToast({
+          message: "Email priority updated.",
+          subMessage: "Your manual preference is saved.",
+        });
+      },
+    });
 
   // 6. User explicit Re-analyze with AI mutation
   const reanalyzeMutation = api.intelligence.reanalyzeEmail.useMutation({
@@ -342,8 +351,10 @@ export function GmailPanel({
     // Sort mode
     if (sortMode === "priority-desc") {
       list.sort((a, b) => {
-        const pA = PRIORITY_ORDER[classifications[a.id]?.priority ?? "normal"] ?? 2;
-        const pB = PRIORITY_ORDER[classifications[b.id]?.priority ?? "normal"] ?? 2;
+        const pA =
+          PRIORITY_ORDER[classifications[a.id]?.priority ?? "normal"] ?? 2;
+        const pB =
+          PRIORITY_ORDER[classifications[b.id]?.priority ?? "normal"] ?? 2;
         if (pB !== pA) return pB - pA;
         return (b.timestamp ?? 0) - (a.timestamp ?? 0);
       });
@@ -388,8 +399,6 @@ export function GmailPanel({
       void utils.calendar.searchEvents.invalidate();
     },
   });
-
-
 
   const drafts = api.gmail.listDrafts.useQuery(
     {
@@ -579,9 +588,7 @@ export function GmailPanel({
         (current) => {
           if (!current) return current;
 
-          return current.filter(
-            (email) => !messageIds.includes(email.id),
-          );
+          return current.filter((email) => !messageIds.includes(email.id));
         },
       );
 
@@ -684,47 +691,18 @@ export function GmailPanel({
   });
 
   // Delete single message permanently
-  const deleteMessagePermanently = api.gmail.deleteMessagePermanently.useMutation({
-    onMutate: async ({ messageId }) => {
-      await utils.gmail.searchEmails.cancel();
+  const deleteMessagePermanently =
+    api.gmail.deleteMessagePermanently.useMutation({
+      onMutate: async ({ messageId }) => {
+        await utils.gmail.searchEmails.cancel();
 
-      const previousEmails = utils.gmail.searchEmails.getData({
-        query: searchQuery,
-        limit: 50,
-        offset: 0,
-        mailbox,
-      });
-
-      utils.gmail.searchEmails.setData(
-        {
+        const previousEmails = utils.gmail.searchEmails.getData({
           query: searchQuery,
           limit: 50,
           offset: 0,
           mailbox,
-        },
-        (current) => {
-          if (!current) return current;
-          return current.filter((email) => email.id !== messageId);
-        },
-      );
+        });
 
-      if (selectedId === messageId) {
-        setSelectedId(null);
-      }
-
-      return { previousEmails };
-    },
-
-    onSuccess: async () => {
-      await utils.gmail.searchEmails.invalidate();
-      await utils.gmail.getMessage.invalidate();
-      setToast({
-        message: "Conversation permanently deleted.",
-      });
-    },
-
-    onError: async (error, _, context) => {
-      if (context?.previousEmails) {
         utils.gmail.searchEmails.setData(
           {
             query: searchQuery,
@@ -732,61 +710,61 @@ export function GmailPanel({
             offset: 0,
             mailbox,
           },
-          context.previousEmails,
+          (current) => {
+            if (!current) return current;
+            return current.filter((email) => email.id !== messageId);
+          },
         );
-      }
-      await utils.gmail.searchEmails.invalidate();
-      setToast({
-        message: "Failed to permanently delete message",
-        subMessage: error.message ?? "An error occurred during permanent deletion.",
-      });
-    },
-  });
+
+        if (selectedId === messageId) {
+          setSelectedId(null);
+        }
+
+        return { previousEmails };
+      },
+
+      onSuccess: async () => {
+        await utils.gmail.searchEmails.invalidate();
+        await utils.gmail.getMessage.invalidate();
+        setToast({
+          message: "Conversation permanently deleted.",
+        });
+      },
+
+      onError: async (error, _, context) => {
+        if (context?.previousEmails) {
+          utils.gmail.searchEmails.setData(
+            {
+              query: searchQuery,
+              limit: 50,
+              offset: 0,
+              mailbox,
+            },
+            context.previousEmails,
+          );
+        }
+        await utils.gmail.searchEmails.invalidate();
+        setToast({
+          message: "Failed to permanently delete message",
+          subMessage:
+            error.message ?? "An error occurred during permanent deletion.",
+        });
+      },
+    });
 
   // Bulk delete messages permanently
-  const deleteMessagesPermanently = api.gmail.deleteMessagesPermanently.useMutation({
-    onMutate: async ({ messageIds }) => {
-      await utils.gmail.searchEmails.cancel();
+  const deleteMessagesPermanently =
+    api.gmail.deleteMessagesPermanently.useMutation({
+      onMutate: async ({ messageIds }) => {
+        await utils.gmail.searchEmails.cancel();
 
-      const previousEmails = utils.gmail.searchEmails.getData({
-        query: searchQuery,
-        limit: 50,
-        offset: 0,
-        mailbox,
-      });
-
-      utils.gmail.searchEmails.setData(
-        {
+        const previousEmails = utils.gmail.searchEmails.getData({
           query: searchQuery,
           limit: 50,
           offset: 0,
           mailbox,
-        },
-        (current) => {
-          if (!current) return current;
-          return current.filter((email) => !messageIds.includes(email.id));
-        },
-      );
+        });
 
-      setSelectedIds((current) =>
-        current.filter((id) => !messageIds.includes(id)),
-      );
-
-      return { previousEmails };
-    },
-
-    onSuccess: async (_, { messageIds }) => {
-      await utils.gmail.searchEmails.invalidate();
-      setToast({
-        message:
-          messageIds.length === 1
-            ? "Conversation permanently deleted."
-            : `${messageIds.length} conversations permanently deleted.`,
-      });
-    },
-
-    onError: async (error, _, context) => {
-      if (context?.previousEmails) {
         utils.gmail.searchEmails.setData(
           {
             query: searchQuery,
@@ -794,16 +772,50 @@ export function GmailPanel({
             offset: 0,
             mailbox,
           },
-          context.previousEmails,
+          (current) => {
+            if (!current) return current;
+            return current.filter((email) => !messageIds.includes(email.id));
+          },
         );
-      }
-      await utils.gmail.searchEmails.invalidate();
-      setToast({
-        message: "Failed to permanently delete messages",
-        subMessage: error.message ?? "An error occurred during bulk permanent deletion.",
-      });
-    },
-  });
+
+        setSelectedIds((current) =>
+          current.filter((id) => !messageIds.includes(id)),
+        );
+
+        return { previousEmails };
+      },
+
+      onSuccess: async (_, { messageIds }) => {
+        await utils.gmail.searchEmails.invalidate();
+        setToast({
+          message:
+            messageIds.length === 1
+              ? "Conversation permanently deleted."
+              : `${messageIds.length} conversations permanently deleted.`,
+        });
+      },
+
+      onError: async (error, _, context) => {
+        if (context?.previousEmails) {
+          utils.gmail.searchEmails.setData(
+            {
+              query: searchQuery,
+              limit: 50,
+              offset: 0,
+              mailbox,
+            },
+            context.previousEmails,
+          );
+        }
+        await utils.gmail.searchEmails.invalidate();
+        setToast({
+          message: "Failed to permanently delete messages",
+          subMessage:
+            error.message ??
+            "An error occurred during bulk permanent deletion.",
+        });
+      },
+    });
 
   // Empty Trash (only clears UI after backend confirms successful permanent deletion)
   const emptyTrash = api.gmail.emptyTrash.useMutation({
@@ -826,14 +838,9 @@ export function GmailPanel({
     },
   });
 
-//Bulk read/unread + star/unstar
-  const modifyMessagesLabels =
-  api.gmail.modifyMessagesLabels.useMutation({
-    onMutate: async ({
-      messageIds,
-      addLabelIds,
-      removeLabelIds,
-    }) => {
+  //Bulk read/unread + star/unstar
+  const modifyMessagesLabels = api.gmail.modifyMessagesLabels.useMutation({
+    onMutate: async ({ messageIds, addLabelIds, removeLabelIds }) => {
       await utils.gmail.searchEmails.cancel();
 
       utils.gmail.searchEmails.setData(
@@ -854,9 +861,7 @@ export function GmailPanel({
             let labelIds = [...email.labelIds];
 
             if (addLabelIds) {
-              labelIds = Array.from(
-                new Set([...labelIds, ...addLabelIds]),
-              );
+              labelIds = Array.from(new Set([...labelIds, ...addLabelIds]));
             }
 
             if (removeLabelIds) {
@@ -954,7 +959,7 @@ export function GmailPanel({
     closeComposer();
   };
 
-  const openReply = (email: { from: string; subject: string }) => {
+  const openReply = useCallback((email: { from: string; subject: string }) => {
     setTo(email.from);
     setCc("");
     setBcc("");
@@ -967,13 +972,14 @@ export function GmailPanel({
 
     setBody("");
     openComposer("reply");
-  };
+  }, []);
 
-  const openForward = (email: {
+  const openForward = useCallback((email: {
     from: string;
     to: string;
     subject: string;
     body: string;
+    date?: string | null;
   }) => {
     setTo("");
     setCc("");
@@ -985,22 +991,16 @@ export function GmailPanel({
         : `Fwd: ${email.subject}`,
     );
 
-    const forwardedMessage = [
-      "",
-      "",
-      "---------- Forwarded message ----------",
-      `From: ${email.from}`,
-      `To: ${email.to}`,
-      `Subject: ${email.subject}`,
-      "",
-      email.body,
-    ].join("\n");
+    const formattedDate = email.date
+      ? new Date(email.date).toLocaleString()
+      : "";
+    const quoteHeader = `\n\n---------- Forwarded message ---------\nFrom: ${email.from}\nDate: ${formattedDate}\nSubject: ${email.subject}\nTo: ${email.to}\n\n`;
 
-    setBody(forwardedMessage);
+    setBody(`${quoteHeader}${email.body}`);
     openComposer("forward");
-  };
+  }, []);
 
-  const handleForwardFromList = async (messageId: string) => {
+  const handleForwardFromList = useCallback(async (messageId: string) => {
     try {
       const email = await utils.gmail.getMessage.fetch({ id: messageId });
 
@@ -1010,7 +1010,7 @@ export function GmailPanel({
     } catch {
       // The existing message view will surface fetch errors if the message cannot be opened.
     }
-  };
+  }, [openForward, utils.gmail.getMessage]);
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
   const createScheduledMeeting = () => {
@@ -1039,15 +1039,15 @@ export function GmailPanel({
     }
 
     sendMeetingInvite.mutate({
-      summary: selectedEmail.data.subject || "Meeting",
-      description: `Scheduled from email conversation.\n\nOriginal email subject: ${selectedEmail.data.subject || "(no subject)"}`,
+      summary: selectedEmail.data.subject ?? "Meeting",
+      description: `Scheduled from email conversation.\n\nOriginal email subject: ${selectedEmail.data.subject ?? "(no subject)"}`,
       start: selectedMeetingSlot.start,
       end: selectedMeetingSlot.end,
       attendees: [scheduleAttendee],
     });
   };
 
-  const toggleStar = () => {
+  const toggleStar = useCallback(() => {
     if (!selectedEmail.data?.id || modifyMessageLabels.isPending) {
       return;
     }
@@ -1063,7 +1063,306 @@ export function GmailPanel({
         addLabelIds: ["STARRED"],
       });
     }
-  };
+  }, [isStarred, modifyMessageLabels, selectedEmail.data?.id]);
+
+  // Keyboard list navigation cursor state
+const [focusedIndex, setFocusedIndex] = useState(0);
+
+// Keep focused index in bounds
+useEffect(() => {
+  if (focusedIndex >= processedEmails.length && processedEmails.length > 0) {
+    setFocusedIndex(processedEmails.length - 1);
+  }
+}, [processedEmails.length, focusedIndex]);
+
+const { registerActions } = useActions();
+
+// Register all email productivity actions into the central Action Registry
+useEffect(() => {
+  const unregister = registerActions([
+    {
+      id: "mail.compose",
+      label: "Compose Email",
+      description: "Create and send a new email",
+      category: "mail",
+      icon: MailPlus,
+      shortcut: { key: "c", display: "C" },
+      priority: 100,
+      mobileVisible: true,
+      execute: () => {
+        resetComposer();
+        openComposer("compose");
+      },
+    },
+
+    {
+      id: "mail.next",
+      label: "Next Email",
+      description: "Select the next email in the list",
+      category: "mail",
+      shortcut: { key: "j", display: "J" },
+      isAvailable: () => !selectedId && processedEmails.length > 0,
+      execute: () => {
+        setFocusedIndex((prev) =>
+          Math.min(prev + 1, processedEmails.length - 1),
+        );
+      },
+    },
+
+    {
+      id: "mail.prev",
+      label: "Previous Email",
+      description: "Select the previous email in the list",
+      category: "mail",
+      shortcut: { key: "k", display: "K" },
+      isAvailable: () => !selectedId && processedEmails.length > 0,
+      execute: () => {
+        setFocusedIndex((prev) => Math.max(prev - 1, 0));
+      },
+    },
+
+    {
+      id: "mail.open",
+      label: "Open Email",
+      description: "Open the currently highlighted email",
+      category: "mail",
+      shortcut: { key: "Enter", display: "Enter / O" },
+      isAvailable: () => !selectedId && processedEmails.length > 0,
+      execute: () => {
+        const email = processedEmails[focusedIndex];
+
+        if (!email) return;
+
+        setSelectedId(email.id);
+
+        if (view !== "trash") {
+          markAsRead.mutate({
+            messageId: email.id,
+            removeLabelIds: ["UNREAD"],
+          });
+        }
+      },
+    },
+
+    {
+      id: "mail.openKeyO",
+      label: "Open Email (O)",
+      category: "mail",
+      shortcut: { key: "o", display: "O" },
+      desktopVisible: false,
+      isAvailable: () => !selectedId && processedEmails.length > 0,
+      execute: () => {
+        const email = processedEmails[focusedIndex];
+
+        if (!email) return;
+
+        setSelectedId(email.id);
+
+        if (view !== "trash") {
+          markAsRead.mutate({
+            messageId: email.id,
+            removeLabelIds: ["UNREAD"],
+          });
+        }
+      },
+    },
+
+    {
+      id: "mail.back",
+      label: "Back to Email List",
+      description: "Close current email and return to list",
+      category: "mail",
+      shortcut: { key: "u", display: "U" },
+      isAvailable: () => Boolean(selectedId),
+      execute: () => {
+        setSelectedId(null);
+      },
+    },
+
+    {
+      id: "mail.reply",
+      label: "Reply",
+      description: "Reply to email sender",
+      category: "mail",
+      icon: ReplyIcon,
+      shortcut: { key: "r", display: "R" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        if (selectedId && selectedEmail.data) {
+          openReply(selectedEmail.data);
+          return;
+        }
+
+        const email = processedEmails[focusedIndex];
+
+        if (!email) return;
+
+        openReply({
+          from: email.from,
+          subject: email.subject,
+        });
+      },
+    },
+
+    {
+      id: "mail.forward",
+      label: "Forward",
+      description: "Forward email message",
+      category: "mail",
+      icon: ForwardIcon,
+      shortcut: { key: "f", display: "F" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        if (selectedId && selectedEmail.data) {
+          openForward(selectedEmail.data);
+          return;
+        }
+
+        const email = processedEmails[focusedIndex];
+
+        if (!email) return;
+
+        void handleForwardFromList(email.id);
+      },
+    },
+
+    {
+      id: "mail.archive",
+      label: view === "trash" ? "Delete Permanently" : "Move to Trash / Archive",
+      description:
+        view === "trash"
+          ? "Permanently remove conversation"
+          : "Move conversation to trash",
+      category: "mail",
+      icon: Trash2,
+      shortcut: { key: "e", display: "E" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        const targetId = selectedId ?? processedEmails[focusedIndex]?.id;
+
+        if (!targetId) return;
+
+        if (view === "trash") {
+          setConfirmDialog({
+            type: "permanentDelete",
+            messageId: targetId,
+          });
+        } else {
+          setConfirmDialog({
+            type: "normalDelete",
+            messageId: targetId,
+          });
+        }
+      },
+    },
+
+    {
+      id: "mail.star",
+      label: "Toggle Star",
+      description: "Star or unstar email",
+      category: "mail",
+      icon: Star,
+      shortcut: { key: "s", display: "S" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        if (selectedId) {
+          toggleStar();
+          return;
+        }
+
+        const email = processedEmails[focusedIndex];
+
+        if (!email) return;
+
+        const isStarred = email.labelIds.includes("STARRED");
+
+        modifyMessageLabels.mutate({
+          messageId: email.id,
+          ...(isStarred
+            ? { removeLabelIds: ["STARRED"] }
+            : { addLabelIds: ["STARRED"] }),
+        });
+      },
+    },
+
+    {
+      id: "mail.markRead",
+      label: "Mark as Read",
+      description: "Mark conversation as read",
+      category: "mail",
+      icon: MailOpen,
+      shortcut: { key: "i", shift: true, display: "Shift+I" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        const targetId = selectedId ?? processedEmails[focusedIndex]?.id;
+
+        if (!targetId) return;
+
+        markAsRead.mutate({
+          messageId: targetId,
+          removeLabelIds: ["UNREAD"],
+        });
+      },
+    },
+
+    {
+      id: "mail.markUnread",
+      label: "Mark as Unread",
+      description: "Mark conversation as unread",
+      category: "mail",
+      icon: Mail,
+      shortcut: { key: "u", shift: true, display: "Shift+U" },
+      isAvailable: () =>
+        Boolean(selectedId ?? processedEmails[focusedIndex]),
+      execute: () => {
+        const targetId = selectedId ?? processedEmails[focusedIndex]?.id;
+
+        if (!targetId) return;
+
+        modifyMessageLabels.mutate({
+          messageId: targetId,
+          addLabelIds: ["UNREAD"],
+        });
+
+        if (selectedId) {
+          setSelectedId(null);
+        }
+      },
+    },
+
+    {
+      id: "mail.refresh",
+      label: "Refresh Inbox",
+      description: "Sync latest emails with Google",
+      category: "mail",
+      icon: RefreshCw,
+      execute: () => {
+        refreshInbox.mutate();
+      },
+    },
+  ]);
+
+  return unregister;
+}, [
+  registerActions,
+  selectedId,
+  processedEmails,
+  focusedIndex,
+  view,
+  markAsRead,
+  selectedEmail.data,
+  openReply,
+  openForward,
+  handleForwardFromList,
+  toggleStar,
+  modifyMessageLabels,
+  refreshInbox,
+])
 
   const isDeletePending =
     deleteMessage.isPending ||
@@ -1192,7 +1491,7 @@ export function GmailPanel({
         )}
 
         {view === "trash" && !selectedId && (
-          <div className="bg-muted/40 border-b px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
+          <div className="bg-muted/40 flex items-center justify-between gap-3 border-b px-4 py-2.5 text-xs">
             <span className="text-muted-foreground flex items-center gap-1.5">
               <Info className="h-3.5 w-3.5 shrink-0" />
               Messages in Trash are permanently deleted after 30 days.
@@ -1204,7 +1503,7 @@ export function GmailPanel({
                 size="sm"
                 onClick={() => setConfirmDialog({ type: "emptyTrash" })}
                 disabled={isDeletePending}
-                className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0 font-medium"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 shrink-0 text-xs font-medium"
               >
                 Empty Trash now
               </Button>
@@ -1270,8 +1569,16 @@ export function GmailPanel({
                 <MailList
                   view={view}
                   emails={processedEmails}
-                  isLoading={isSemanticOrHybridSearch ? intelligentSearch.isLoading : emails.isLoading}
-                  error={isSemanticOrHybridSearch ? intelligentSearch.error?.message : emails.error?.message}
+                  isLoading={
+                    isSemanticOrHybridSearch
+                      ? intelligentSearch.isLoading
+                      : emails.isLoading
+                  }
+                  error={
+                    isSemanticOrHybridSearch
+                      ? intelligentSearch.error?.message
+                      : emails.error?.message
+                  }
                   classifications={classificationsQuery.data}
                   isClassifying={classifyBatch.isPending}
                   priorityFilter={activePriorityFilter}
@@ -1282,7 +1589,9 @@ export function GmailPanel({
                     isSearchActive
                       ? {
                           query: searchQuery,
-                          mode: isSemanticOrHybridSearch ? searchMode : "keyword",
+                          mode: isSemanticOrHybridSearch
+                            ? searchMode
+                            : "keyword",
                           totalCount: processedEmails.length,
                           stats: intelligentSearch.data?.stats,
                         }
@@ -1290,6 +1599,8 @@ export function GmailPanel({
                   }
                   selectedId={selectedId}
                   selectedIds={selectedIds}
+                  focusedIndex={focusedIndex}
+                  onFocusIndexChange={setFocusedIndex}
                   onSelectionChange={setSelectedIds}
                   onSelect={(messageId) => {
                     setSelectedId(messageId);
@@ -1588,6 +1899,8 @@ function MailList({
   error,
   selectedId,
   selectedIds,
+  focusedIndex,
+  onFocusIndexChange,
   onSelectionChange,
   onSelect,
   onDelete,
@@ -1629,6 +1942,8 @@ function MailList({
   error?: string;
   selectedId: string | null;
   selectedIds: string[];
+  focusedIndex?: number;
+  onFocusIndexChange?: (index: number) => void;
   onSelectionChange: (ids: string[]) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -1718,8 +2033,7 @@ function MailList({
     ? emails.find((email) => email.id === contextMenu.emailId)
     : undefined;
 
-  const allSelected =
-    emails.length > 0 && selectedIds.length === emails.length;
+  const allSelected = emails.length > 0 && selectedIds.length === emails.length;
 
   const hasSelection = selectedIds.length > 0;
 
@@ -1746,9 +2060,7 @@ function MailList({
 
   const toggleSelection = (messageId: string) => {
     if (selectedIds.includes(messageId)) {
-      onSelectionChange(
-        selectedIds.filter((id) => id !== messageId),
-      );
+      onSelectionChange(selectedIds.filter((id) => id !== messageId));
       return;
     }
 
@@ -1763,7 +2075,7 @@ function MailList({
           checked={allSelected}
           onChange={toggleSelectAll}
           aria-label="Select all emails"
-          className="h-4 w-4 accent-primary"
+          className="accent-primary h-4 w-4"
         />
 
         {hasSelection ? (
@@ -1813,7 +2125,9 @@ function MailList({
                   onClick={onBulkToggleRead}
                   disabled={isBulkActionPending}
                   title={allSelectedUnread ? "Mark as read" : "Mark as unread"}
-                  aria-label={allSelectedUnread ? "Mark as read" : "Mark as unread"}
+                  aria-label={
+                    allSelectedUnread ? "Mark as read" : "Mark as unread"
+                  }
                   className="h-8 gap-1.5"
                 >
                   {allSelectedUnread ? (
@@ -1878,23 +2192,29 @@ function MailList({
           </>
         ) : (
           <div className="flex flex-1 items-center justify-between gap-2">
-            <span className="text-muted-foreground text-xs">
-              Select all
-            </span>
+            <span className="text-muted-foreground text-xs">Select all</span>
 
             {/* Priority Filter and Sort Controls */}
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               {onPriorityFilterChange && (
                 <div className="flex items-center gap-1">
-                  <span className="text-muted-foreground text-[11px] hidden sm:inline">Priority:</span>
+                  <span className="text-muted-foreground hidden text-[11px] sm:inline">
+                    Priority:
+                  </span>
                   <select
                     value={priorityFilter ?? "all"}
-                    onChange={(e) => onPriorityFilterChange(e.target.value as PriorityFilterOption)}
+                    onChange={(e) =>
+                      onPriorityFilterChange(
+                        e.target.value as PriorityFilterOption,
+                      )
+                    }
                     aria-label="Filter emails by priority"
-                    className="h-7 text-xs bg-muted/40 border border-border/60 rounded px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                    className="bg-muted/40 border-border/60 text-foreground focus:ring-primary/40 h-7 rounded border px-1.5 text-xs focus:ring-1 focus:outline-none"
                   >
                     <option value="all">All Priorities</option>
-                    <option value="high">High Priority (Urgent & Important)</option>
+                    <option value="high">
+                      High Priority (Urgent & Important)
+                    </option>
                     <option value="urgent">Urgent</option>
                     <option value="important">Important</option>
                     <option value="normal">Normal</option>
@@ -1907,12 +2227,21 @@ function MailList({
                 <div className="flex items-center gap-1">
                   <select
                     value={sortMode ?? "date-desc"}
-                    onChange={(e) => onSortModeChange(e.target.value as "date-desc" | "priority-desc" | "date-asc")}
+                    onChange={(e) =>
+                      onSortModeChange(
+                        e.target.value as
+                          | "date-desc"
+                          | "priority-desc"
+                          | "date-asc",
+                      )
+                    }
                     aria-label="Sort emails"
-                    className="h-7 text-xs bg-muted/40 border border-border/60 rounded px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                    className="bg-muted/40 border-border/60 text-foreground focus:ring-primary/40 h-7 rounded border px-1.5 text-xs focus:ring-1 focus:outline-none"
                   >
                     <option value="date-desc">Newest first</option>
-                    <option value="priority-desc">Priority (Urgent first)</option>
+                    <option value="priority-desc">
+                      Priority (Urgent first)
+                    </option>
                     <option value="date-asc">Oldest first</option>
                   </select>
                 </div>
@@ -1924,24 +2253,32 @@ function MailList({
 
       {/* Search Status & Origin Banner */}
       {searchInfo && (
-        <div className="bg-muted/40 border-b px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-foreground">
-              {searchInfo.totalCount} {searchInfo.totalCount === 1 ? "result" : "results"}
+            <span className="text-foreground font-semibold">
+              {searchInfo.totalCount}{" "}
+              {searchInfo.totalCount === 1 ? "result" : "results"}
             </span>
-            <span className="text-muted-foreground">for &ldquo;{searchInfo.query}&rdquo;</span>
-            <span className={cn(
-              "text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wider",
-              searchInfo.mode === "hybrid" && "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
-              searchInfo.mode === "semantic" && "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-              searchInfo.mode === "keyword" && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-            )}>
+            <span className="text-muted-foreground">
+              for &ldquo;{searchInfo.query}&rdquo;
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase",
+                searchInfo.mode === "hybrid" &&
+                  "border-purple-500/30 bg-purple-500/15 text-purple-600 dark:text-purple-400",
+                searchInfo.mode === "semantic" &&
+                  "border-blue-500/30 bg-blue-500/15 text-blue-600 dark:text-blue-400",
+                searchInfo.mode === "keyword" &&
+                  "border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+              )}
+            >
               {searchInfo.mode} search
             </span>
           </div>
 
           {searchInfo.stats && (
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-2 text-[11px]">
               {searchInfo.stats.keywordMatches > 0 && (
                 <span>{searchInfo.stats.keywordMatches} keyword</span>
               )}
@@ -1957,9 +2294,10 @@ function MailList({
       )}
 
       <ul>
-        {emails.map((email) => {
+        {emails.map((email, index) => {
           const isUnread = email.labelIds.includes("UNREAD");
           const isSelected = selectedIds.includes(email.id);
+          const isFocused = !selectedId && index === focusedIndex;
           const cls = classifications?.[email.id];
           const priorityLevel: PriorityType = cls
             ? (cls.priority as PriorityType)
@@ -1972,6 +2310,7 @@ function MailList({
             <li
               key={email.id}
               className="border-b"
+              onMouseEnter={() => onFocusIndexChange?.(index)}
               onContextMenu={(event) => {
                 event.preventDefault();
 
@@ -1994,6 +2333,7 @@ function MailList({
                   isUnread && "bg-muted/40",
                   isSelected && "bg-accent/60",
                   selectedId === email.id && "bg-accent",
+                  isFocused && "ring-2 ring-primary/50 ring-inset bg-accent/20",
                   isUrgent && "border-l-3 border-l-rose-500",
                 )}
               >
@@ -2004,7 +2344,7 @@ function MailList({
                     onChange={() => toggleSelection(email.id)}
                     onClick={(event) => event.stopPropagation()}
                     aria-label={`Select ${email.subject || "email"}`}
-                    className="h-4 w-4 accent-primary"
+                    className="accent-primary h-4 w-4"
                   />
                 </div>
 
@@ -2014,13 +2354,13 @@ function MailList({
                   className="min-w-0 text-left"
                 >
                   <span className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={cn(
                           "truncate text-sm",
                           isUnread
-                            ? "font-semibold text-foreground"
-                            : "font-normal text-foreground",
+                            ? "text-foreground font-semibold"
+                            : "text-foreground font-normal",
                         )}
                       >
                         {email.from
@@ -2037,12 +2377,17 @@ function MailList({
                       />
 
                       {email.matchOrigin && (
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.2 rounded border capitalize font-medium",
-                          email.matchOrigin === "hybrid" && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-                          email.matchOrigin === "semantic" && "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-                          email.matchOrigin === "keyword" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-                        )}>
+                        <span
+                          className={cn(
+                            "py-0.2 rounded border px-1.5 text-[10px] font-medium capitalize",
+                            email.matchOrigin === "hybrid" &&
+                              "border-purple-500/20 bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                            email.matchOrigin === "semantic" &&
+                              "border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                            email.matchOrigin === "keyword" &&
+                              "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+                          )}
+                        >
                           {email.matchOrigin} match
                         </span>
                       )}
@@ -2052,8 +2397,8 @@ function MailList({
                       className={cn(
                         "mt-0.5 block truncate text-sm",
                         isUnread
-                          ? "font-semibold text-foreground"
-                          : "font-normal text-muted-foreground",
+                          ? "text-foreground font-semibold"
+                          : "text-muted-foreground font-normal",
                       )}
                     >
                       {email.subject || "(no subject)"}
@@ -2071,9 +2416,9 @@ function MailList({
                   {email.date && (
                     <span
                       className={cn(
-                        "pt-0.5 text-xs mr-1",
+                        "mr-1 pt-0.5 text-xs",
                         isUnread
-                          ? "font-semibold text-foreground"
+                          ? "text-foreground font-semibold"
                           : "text-muted-foreground",
                       )}
                     >
@@ -2233,9 +2578,7 @@ function MailList({
                   />
                 }
                 label={
-                  contextEmail.labelIds.includes("STARRED")
-                    ? "Unstar"
-                    : "Star"
+                  contextEmail.labelIds.includes("STARRED") ? "Unstar" : "Star"
                 }
                 onClick={() => {
                   setContextMenu(null);
@@ -2473,14 +2816,15 @@ function FullEmailView({
       {selectedEmail && (
         <div className="bg-card text-card-foreground border-border/80 rounded-lg border p-5 shadow-sm sm:p-6">
           {isTrashView && (
-            <div className="bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-200 mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 text-xs sm:text-sm">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 sm:text-sm dark:text-amber-200">
               <div className="flex items-center gap-2">
                 <Info className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                 <span>
-                  This message is in Trash. Messages in Trash are permanently deleted after 30 days.
+                  This message is in Trash. Messages in Trash are permanently
+                  deleted after 30 days.
                 </span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -2506,10 +2850,10 @@ function FullEmailView({
           )}
 
           {/* AI Priority & Intelligence Card */}
-          <div className="mb-5 rounded-lg border border-border/80 bg-muted/20 p-4 shadow-xs">
+          <div className="border-border/80 bg-muted/20 mb-5 rounded-lg border p-4 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                   Priority:
                 </span>
                 <PriorityBadge
@@ -2525,12 +2869,12 @@ function FullEmailView({
                   size="md"
                 />
                 {classification?.category && (
-                  <span className="text-xs bg-muted border px-2 py-0.5 rounded-full text-foreground font-medium">
+                  <span className="bg-muted text-foreground rounded-full border px-2 py-0.5 text-xs font-medium">
                     {classification.category}
                   </span>
                 )}
                 {classification?.userOverride && (
-                  <span className="text-[11px] text-muted-foreground bg-background border px-2 py-0.5 rounded font-medium">
+                  <span className="text-muted-foreground bg-background rounded border px-2 py-0.5 text-[11px] font-medium">
                     User Override
                   </span>
                 )}
@@ -2538,18 +2882,24 @@ function FullEmailView({
 
               <div className="flex items-center gap-2">
                 {onOverridePriority && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="hidden sm:inline font-medium">Adjust:</span>
+                  <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                    <span className="hidden font-medium sm:inline">
+                      Adjust:
+                    </span>
                     <select
                       value={classification?.priority ?? "normal"}
                       onChange={(e) =>
                         onOverridePriority(
                           selectedEmail.id,
-                          e.target.value as "urgent" | "important" | "normal" | "low",
+                          e.target.value as
+                            | "urgent"
+                            | "important"
+                            | "normal"
+                            | "low",
                         )
                       }
                       aria-label="Manually adjust priority"
-                      className="h-7 text-xs bg-background border rounded px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="bg-background text-foreground focus:ring-primary h-7 rounded border px-2 text-xs focus:ring-1 focus:outline-none"
                     >
                       <option value="urgent">Urgent</option>
                       <option value="important">Important</option>
@@ -2566,24 +2916,28 @@ function FullEmailView({
                     size="sm"
                     onClick={() => onReanalyze(selectedEmail)}
                     disabled={isReanalyzing}
-                    className="h-7 text-xs gap-1.5"
+                    className="h-7 gap-1.5 text-xs"
                     title="Run fresh AI priority analysis on this email"
                   >
                     <Sparkles
                       className={cn(
                         "h-3 w-3",
-                        isReanalyzing && "animate-spin text-primary",
+                        isReanalyzing && "text-primary animate-spin",
                       )}
                     />
-                    <span>{isReanalyzing ? "Analyzing..." : "Re-analyze with AI"}</span>
+                    <span>
+                      {isReanalyzing ? "Analyzing..." : "Re-analyze with AI"}
+                    </span>
                   </Button>
                 )}
               </div>
             </div>
 
             {classification?.reason && (
-              <div className="mt-3 text-xs text-muted-foreground bg-background/80 rounded-md border border-border/50 p-2.5 leading-relaxed">
-                <span className="font-semibold text-foreground">AI Reasoning: </span>
+              <div className="text-muted-foreground bg-background/80 border-border/50 mt-3 rounded-md border p-2.5 text-xs leading-relaxed">
+                <span className="text-foreground font-semibold">
+                  AI Reasoning:{" "}
+                </span>
                 {classification.reason}
               </div>
             )}
@@ -3788,11 +4142,11 @@ function ActionConfirmDialog({
           </Button>
         </div>
 
-        <div className="px-5 py-4 text-sm text-muted-foreground">
+        <div className="text-muted-foreground px-5 py-4 text-sm">
           <p>{message}</p>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t px-5 py-3 bg-muted/20">
+        <div className="bg-muted/20 flex items-center justify-end gap-2 border-t px-5 py-3">
           <Button
             type="button"
             variant="outline"
@@ -3834,7 +4188,7 @@ function NotificationToast({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-900 px-4 py-3 text-sm shadow-xl border border-zinc-800 dark:border-zinc-200 animate-in fade-in slide-in-from-bottom-2">
+    <div className="animate-in fade-in slide-in-from-bottom-2 fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-50 shadow-xl dark:border-zinc-200 dark:bg-zinc-100 dark:text-zinc-900">
       <div className="flex flex-col">
         <span className="font-medium">{message}</span>
         {subMessage && (
@@ -3852,7 +4206,7 @@ function NotificationToast({
             onUndo();
             onClose();
           }}
-          className="h-7 text-xs font-medium ml-1 text-zinc-900 bg-zinc-100 hover:bg-zinc-200 dark:text-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+          className="ml-1 h-7 bg-zinc-100 text-xs font-medium text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
         >
           Undo
         </Button>
@@ -3860,7 +4214,7 @@ function NotificationToast({
       <button
         type="button"
         onClick={onClose}
-        className="text-zinc-400 hover:text-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-900 ml-1.5"
+        className="ml-1.5 text-zinc-400 hover:text-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-900"
         aria-label="Dismiss notification"
       >
         <X className="h-4 w-4" />

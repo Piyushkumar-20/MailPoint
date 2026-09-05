@@ -1,7 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Bot,
+  CalendarDays,
+  Command,
+  Home,
+  Inbox,
+  PenSquare,
+  Search,
+  Send,
+  Settings,
+  Sparkles,
+  Star,
+  Trash2,
+} from "lucide-react";
 
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
@@ -13,7 +27,11 @@ import {
 import { DashboardOverview } from "@/app/_components/dashboard-overview";
 import { GmailPanel } from "@/app/_components/gmail-panel";
 import { IntegrationsPanel } from "@/app/_components/integrations-panel";
+import { CommandPalette } from "@/components/command-palette";
+import { MobileQuickActions } from "@/components/mobile-quick-actions";
+import { ShortcutsHelpDialog } from "@/components/shortcuts-help-dialog";
 import { Button } from "@/components/ui/button";
+import { ActionProvider, useActions } from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
@@ -72,7 +90,7 @@ function SettingsPanel({
   );
 }
 
-export function MailPointApp({
+function MailPointAppInner({
   initialSection = "overview",
 }: {
   initialSection?: AppSection;
@@ -184,10 +202,196 @@ export function MailPointApp({
     }
   };
 
-  const handleNavigate = (section: AppSection) => {
+  const handleNavigate = useCallback((section: AppSection) => {
     setActiveSection(section);
     router.push(SECTION_PATHS[section]);
-  };
+  }, [router]);
+
+  const { registerActions, openCommandPalette, openShortcutsHelp } = useActions();
+
+  // Register Global Navigation, Calendar, AI, and System Actions
+  useEffect(() => {
+    const unregister = registerActions([
+      // Navigation Actions
+      {
+        id: "nav.inbox",
+        label: "Go to Inbox",
+        description: "View incoming mail",
+        category: "navigation",
+        icon: Inbox,
+        priority: 90,
+        execute: () => handleNavigate("inbox"),
+      },
+      {
+        id: "nav.starred",
+        label: "Go to Starred",
+        description: "View starred messages",
+        category: "navigation",
+        icon: Star,
+        priority: 85,
+        execute: () => handleNavigate("starred"),
+      },
+      {
+        id: "nav.sent",
+        label: "Go to Sent",
+        description: "View sent emails",
+        category: "navigation",
+        icon: Send,
+        priority: 80,
+        execute: () => handleNavigate("sent"),
+      },
+      {
+        id: "nav.drafts",
+        label: "Go to Drafts",
+        description: "View draft emails",
+        category: "navigation",
+        icon: PenSquare,
+        priority: 75,
+        execute: () => handleNavigate("drafts"),
+      },
+      {
+        id: "nav.trash",
+        label: "Go to Trash",
+        description: "View deleted messages",
+        category: "navigation",
+        icon: Trash2,
+        priority: 70,
+        execute: () => handleNavigate("trash"),
+      },
+      {
+        id: "nav.calendar",
+        label: "Go to Calendar",
+        description: "Open schedule and meetings",
+        category: "navigation",
+        icon: CalendarDays,
+        priority: 88,
+        execute: () => handleNavigate("calendar"),
+      },
+      {
+        id: "nav.agent",
+        label: "Open MailPoint AI",
+        description: "Chat with AI email assistant",
+        category: "ai",
+        icon: Bot,
+        priority: 95,
+        mobileVisible: true,
+        execute: () => handleNavigate("agent"),
+      },
+      {
+        id: "nav.overview",
+        label: "Go to Dashboard Overview",
+        description: "Overview metrics and shortcuts",
+        category: "navigation",
+        icon: Home,
+        priority: 60,
+        execute: () => handleNavigate("overview"),
+      },
+      {
+        id: "nav.settings",
+        label: "Account Settings",
+        description: "Manage account and profile",
+        category: "navigation",
+        icon: Settings,
+        priority: 50,
+        execute: () => handleNavigate("settings"),
+      },
+
+      // Calendar Actions
+      {
+        id: "calendar.createEvent",
+        label: "Create Calendar Event",
+        description: "Schedule a new event or meeting",
+        category: "calendar",
+        icon: CalendarDays,
+        shortcut: { key: "c", shift: true, display: "Shift+C" },
+        priority: 92,
+        mobileVisible: true,
+        execute: () => {
+          if (activeSection !== "calendar") {
+            handleNavigate("calendar");
+          }
+          setFocusCreateSignal((n) => n + 1);
+        },
+      },
+      {
+        id: "calendar.today",
+        label: "Today's Schedule",
+        description: "Jump to current week",
+        category: "calendar",
+        isAvailable: () => activeSection === "calendar",
+        execute: () => setWeekOffset(0),
+      },
+
+      // AI Actions
+      {
+        id: "ai.ask",
+        label: "Ask MailPoint AI",
+        description: "Prompt the AI assistant to help you",
+        category: "ai",
+        icon: Sparkles,
+        priority: 96,
+        mobileVisible: true,
+        execute: () => {
+          if (activeSection !== "agent") {
+            handleNavigate("agent");
+          }
+        },
+      },
+
+      // Search Action
+      {
+        id: "mail.search",
+        label: "Search Mail",
+        description: "Search keywords, senders, or topics",
+        category: "mail",
+        icon: Search,
+        shortcut: { key: "/", ctrlOrCmd: true, display: "⌘/" },
+        priority: 85,
+        mobileVisible: true,
+        execute: () => {
+          const isMailSec =
+            activeSection === "inbox" ||
+            activeSection === "starred" ||
+            activeSection === "sent" ||
+            activeSection === "trash";
+          if (!isMailSec) {
+            handleNavigate("inbox");
+          }
+          setTimeout(() => {
+            const input = document.getElementById(
+              "mail-search-input",
+            ) as HTMLInputElement | null;
+            if (input) {
+              input.focus();
+              input.select();
+            } else {
+              openCommandPalette();
+            }
+          }, 60);
+        },
+      },
+
+      // Help & System
+      {
+        id: "help.shortcuts",
+        label: "Productivity & Shortcuts Help",
+        description: "View keyboard shortcuts and touch guide",
+        category: "system",
+        icon: Command,
+        shortcut: { key: "?", display: "?" },
+        priority: 40,
+        execute: () => openShortcutsHelp(),
+      },
+    ]);
+
+    return unregister;
+  }, [
+    registerActions,
+    activeSection,
+    handleNavigate,
+    openCommandPalette,
+    openShortcutsHelp,
+  ]);
 
   return (
     <div className="bg-background text-foreground flex h-screen">
@@ -292,6 +496,22 @@ export function MailPointApp({
           {activeSection === "integrations" && <IntegrationsPanel />}
         </main>
       </div>
+
+      <CommandPalette />
+      <MobileQuickActions />
+      <ShortcutsHelpDialog />
     </div>
+  );
+}
+
+export function MailPointApp({
+  initialSection = "overview",
+}: {
+  initialSection?: AppSection;
+}) {
+  return (
+    <ActionProvider>
+      <MailPointAppInner initialSection={initialSection} />
+    </ActionProvider>
   );
 }
