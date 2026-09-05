@@ -99,6 +99,10 @@ export function MailPointApp({
   // Gmail search: lifted here so the header search box can drive GmailPanel.
   const [mailSearchInput, setMailSearchInput] = useState("");
   const [activeMailSearch, setActiveMailSearch] = useState("");
+  const [searchMode, setSearchMode] = useState<"hybrid" | "semantic" | "keyword">("hybrid");
+  const [searchPriorityFilter, setSearchPriorityFilter] = useState<
+    "all" | "urgent" | "important" | "normal" | "low" | "high"
+  >("all");
 
   // Calendar week nav + create signal: lifted here so the header controls
   // CalendarPanel without changing its internal query logic.
@@ -221,6 +225,10 @@ export function MailPointApp({
                     setMailSearchInput("");
                     setActiveMailSearch("");
                   },
+                  mode: searchMode,
+                  onModeChange: setSearchMode,
+                  priorityFilter: searchPriorityFilter,
+                  onPriorityFilterChange: setSearchPriorityFilter,
                 }
               : undefined
           }
@@ -261,6 +269,9 @@ export function MailPointApp({
             <GmailPanel
               view={activeSection}
               searchQuery={activeMailSearch}
+              searchMode={searchMode}
+              priorityFilter={searchPriorityFilter}
+              onPriorityFilterChange={setSearchPriorityFilter}
               calendarComposeRequest={calendarComposeRequest}
             />
           )}

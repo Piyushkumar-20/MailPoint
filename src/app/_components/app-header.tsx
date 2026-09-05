@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Menu, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Menu, Plus } from "lucide-react";
 
 import {
   AccountMenu,
@@ -36,11 +36,18 @@ function initialsFor(user: SidebarUser | null) {
   return initials || "?";
 }
 
+import { SearchBar, type PriorityFilterOption } from "@/components/search-bar";
+import type { SearchMode } from "@/server/lib/email-search";
+
 interface MailSearchProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
   onClear: () => void;
+  mode: SearchMode;
+  onModeChange: (mode: SearchMode) => void;
+  priorityFilter: PriorityFilterOption;
+  onPriorityFilterChange: (priority: PriorityFilterOption) => void;
 }
 
 interface CalendarControlsProps {
@@ -103,31 +110,18 @@ export function AppHeader({
       <div className="min-w-0 flex-1" />
 
       {isMailSection && mailSearch && (
-        <form
-          className="relative hidden w-full max-w-sm sm:block"
-          onSubmit={(e) => {
-            e.preventDefault();
-            mailSearch.onSubmit();
-          }}
-        >
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-          <input
-            type="text"
+        <div className="hidden sm:block w-full max-w-sm md:max-w-md">
+          <SearchBar
             value={mailSearch.value}
-            onChange={(e) => mailSearch.onChange(e.target.value)}
-            placeholder="Search mail"
-            className="border-input bg-muted/50 text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/30 h-8 w-full rounded-lg border pr-12 pl-8 text-sm focus:ring-3 focus:outline-none"
+            onChange={mailSearch.onChange}
+            onSubmit={mailSearch.onSubmit}
+            onClear={mailSearch.onClear}
+            mode={mailSearch.mode}
+            onModeChange={mailSearch.onModeChange}
+            priorityFilter={mailSearch.priorityFilter}
+            onPriorityFilterChange={mailSearch.onPriorityFilterChange}
           />
-          {mailSearch.value && (
-            <button
-              type="button"
-              onClick={mailSearch.onClear}
-              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 text-xs"
-            >
-              Clear
-            </button>
-          )}
-        </form>
+        </div>
       )}
 
       {section === "calendar" && calendarControls && (

@@ -34,6 +34,7 @@ import {
   Trash2,
   Underline,
   X,
+  Sparkles,
 } from "lucide-react";
 import DOMPurify from "dompurify";
 
@@ -42,6 +43,8 @@ import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PriorityBadge, type PriorityType } from "@/components/priority-badge";
+import type { PriorityFilterOption } from "@/components/search-bar";
 
 type ComposerMode = "compose" | "reply" | "forward";
 
@@ -62,6 +65,13 @@ type ToastState = {
 } | null;
 
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+const PRIORITY_ORDER: Record<string, number> = {
+  urgent: 4,
+  important: 3,
+  normal: 2,
+  low: 1,
+};
 
 const MEETING_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   const hours = Math.floor(index / 2);
@@ -111,11 +121,17 @@ function formatMeetingTime(value: string) {
 export function GmailPanel({
   view,
   searchQuery,
+  searchMode = "hybrid",
+  priorityFilter = "all",
+  onPriorityFilterChange,
   calendarComposeRequest,
 }: {
   view: "inbox" | "starred" | "drafts" | "sent" | "trash";
   /** The active (submitted) search query, controlled by the header search box. */
   searchQuery: string;
+  searchMode?: "hybrid" | "semantic" | "keyword";
+  priorityFilter?: PriorityFilterOption;
+  onPriorityFilterChange?: (priority: PriorityFilterOption) => void;
   calendarComposeRequest?: {
     to: string;
     subject: string;
@@ -130,6 +146,12 @@ export function GmailPanel({
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>(null);
   const [toast, setToast] = useState<ToastState>(null);
+
+  // Intelligence & Sorting states
+  const [sortMode, setSortMode] = useState<"date-desc" | "priority-desc" | "date-asc">("date-desc");
+  const [internalPriorityFilter, setInternalPriorityFilter] = useState<PriorityFilterOption>("all");
+  const activePriorityFilter = priorityFilter ?? internalPriorityFilter;
+  const setActivePriorityFilter = onPriorityFilterChange ?? setInternalPriorityFilter;
 
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [meetingDuration, setMeetingDuration] = useState(30);
@@ -166,6 +188,181 @@ export function GmailPanel({
     );
   }, [selectedEmail.data, view]);
 
+  useEffect(() => {
+    if (!toast) return;
+
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const mailbox =
+    view === "starred"
+      ? "starred"
+      : view === "sent"
+        ? "sent"
+        : view === "trash"
+          ? "trash"
+          : "inbox";
+
+  // Check if intelligent search (hybrid or semantic) is requested
+  const isSearchActive = Boolean(searchQuery.trim());
+  const isSemanticOrHybridSearch = isSearchActive && (searchMode === "hybrid" || searchMode === "semantic");
+
+  // 1. Intelligent Search Query (handles semantic & hybrid modes)
+  const intelligentSearch = api.intelligence.searchEmails.useQuery(
+    {
+      query: searchQuery,
+      mode: searchMode,
+      mailbox,
+      priority: activePriorityFilter,
+      limit: 50,
+    },
+    {
+      enabled: isSemanticOrHybridSearch,
+    },
+  );
+
+  // 2. Standard Gmail Search Query (handles standard mailbox view and keyword search)
+  const emails = api.gmail.searchEmails.useQuery(
+    {
+      query: searchQuery,
+      limit: 50,
+      offset: 0,
+      mailbox,
+    },
+    {
+      enabled:
+        (view === "inbox" ||
+          view === "starred" ||
+          view === "sent" ||
+          view === "trash") &&
+        !isSemanticOrHybridSearch,
+    },
+  );
+
+  // Resolve raw email list based on active mode
+  const rawEmailsList = useMemo(() => {
+    if (isSemanticOrHybridSearch) {
+      return intelligentSearch.data?.items ?? [];
+    }
+    return emails.data ?? [];
+  }, [isSemanticOrHybridSearch, intelligentSearch.data, emails.data]);
+
+  const visibleMessageIds = useMemo(
+    () => rawEmailsList.map((m) => m.id),
+    [rawEmailsList],
+  );
+
+  // 3. Query stored classifications for visible emails
+  const classificationsQuery = api.intelligence.getClassifications.useQuery(
+    { messageIds: visibleMessageIds },
+    { enabled: visibleMessageIds.length > 0 },
+  );
+
+  // 4. Background batch classification mutation
+  const classifyBatch = api.intelligence.classifyBatch.useMutation({
+    onSuccess: async () => {
+      await utils.intelligence.getClassifications.invalidate();
+    },
+  });
+
+  // Track emails already dispatched for background classification
+  const dispatchedClassificationRef = useRef<Set<string>>(new Set());
+
+  // Automatically trigger background classification for unclassified emails
+  useEffect(() => {
+    if (!classificationsQuery.data || rawEmailsList.length === 0) return;
+
+    const unclassified = rawEmailsList.filter((email) => {
+      const isClassified = Boolean(classificationsQuery.data[email.id]);
+      const isAlreadyDispatched = dispatchedClassificationRef.current.has(email.id);
+      return !isClassified && !isAlreadyDispatched;
+    });
+
+    if (unclassified.length > 0) {
+      for (const email of unclassified) {
+        dispatchedClassificationRef.current.add(email.id);
+      }
+
+      classifyBatch.mutate({
+        emails: unclassified.map((e) => ({
+          id: e.id,
+          subject: e.subject,
+          from: e.from,
+          to: e.to,
+          snippet: e.snippet,
+          date: e.date,
+          labelIds: e.labelIds,
+        })),
+      });
+    }
+  }, [classificationsQuery.data, rawEmailsList, classifyBatch]);
+
+  // 5. User manual priority override mutation
+  const overridePriorityMutation = api.intelligence.overridePriority.useMutation({
+    onSuccess: async () => {
+      await utils.intelligence.getClassifications.invalidate();
+      setToast({
+        message: "Email priority updated.",
+        subMessage: "Your manual preference is saved.",
+      });
+    },
+  });
+
+  // 6. User explicit Re-analyze with AI mutation
+  const reanalyzeMutation = api.intelligence.reanalyzeEmail.useMutation({
+    onSuccess: async () => {
+      await utils.intelligence.getClassifications.invalidate();
+      setToast({
+        message: "Email re-analyzed with AI.",
+        subMessage: "New priority classification applied.",
+      });
+    },
+  });
+
+  const processedEmails = useMemo(() => {
+    const classifications = classificationsQuery.data ?? {};
+    let list = [...rawEmailsList];
+
+    // Priority filter (for normal list where query didn't pre-filter)
+    if (!isSemanticOrHybridSearch && activePriorityFilter !== "all") {
+      list = list.filter((email) => {
+        const cls = classifications[email.id];
+        const p = cls?.priority ?? "normal";
+        if (activePriorityFilter === "high") {
+          return p === "urgent" || p === "important";
+        }
+        return p === activePriorityFilter;
+      });
+    }
+
+    // Sort mode
+    if (sortMode === "priority-desc") {
+      list.sort((a, b) => {
+        const pA = PRIORITY_ORDER[classifications[a.id]?.priority ?? "normal"] ?? 2;
+        const pB = PRIORITY_ORDER[classifications[b.id]?.priority ?? "normal"] ?? 2;
+        if (pB !== pA) return pB - pA;
+        return (b.timestamp ?? 0) - (a.timestamp ?? 0);
+      });
+    } else if (sortMode === "date-asc") {
+      list.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    } else {
+      // date-desc (default)
+      list.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    }
+
+    return list;
+  }, [
+    rawEmailsList,
+    classificationsQuery.data,
+    activePriorityFilter,
+    sortMode,
+    isSemanticOrHybridSearch,
+  ]);
+
   const availabilityQuery = api.calendar.getAvailability.useQuery(
     {
       timeMin: new Date(`${meetingDate}T${meetingStartTime}:00`).toISOString(),
@@ -192,38 +389,7 @@ export function GmailPanel({
     },
   });
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => {
-      setToast(null);
-    }, 6000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
-  const mailbox =
-    view === "starred"
-      ? "starred"
-      : view === "sent"
-        ? "sent"
-        : view === "trash"
-          ? "trash"
-          : "inbox";
-
-  const emails = api.gmail.searchEmails.useQuery(
-    {
-      query: searchQuery,
-      limit: 50,
-      offset: 0,
-      mailbox,
-    },
-    {
-      enabled:
-        view === "inbox" ||
-        view === "starred" ||
-        view === "sent" ||
-        view === "trash",
-    },
-  );
 
   const drafts = api.gmail.listDrafts.useQuery(
     {
@@ -1060,6 +1226,25 @@ export function GmailPanel({
               isStarred={isStarred}
               isStarPending={modifyMessageLabels.isPending}
               onToggleStar={toggleStar}
+              classification={classificationsQuery.data?.[selectedId]}
+              onOverridePriority={(messageId, priority) =>
+                overridePriorityMutation.mutate({ messageId, priority })
+              }
+              onReanalyze={(email) =>
+                reanalyzeMutation.mutate({
+                  email: {
+                    id: email.id,
+                    subject: email.subject,
+                    from: email.from,
+                    to: email.to,
+                    snippet: email.snippet,
+                    body: email.body,
+                    date: email.date,
+                    labelIds: email.labelIds,
+                  },
+                })
+              }
+              isReanalyzing={reanalyzeMutation.isPending}
               onDelete={(messageId) => {
                 if (view === "trash") {
                   setConfirmDialog({ type: "permanentDelete", messageId });
@@ -1084,9 +1269,25 @@ export function GmailPanel({
                 view === "trash") && (
                 <MailList
                   view={view}
-                  emails={emails.data}
-                  isLoading={emails.isLoading}
-                  error={emails.error?.message}
+                  emails={processedEmails}
+                  isLoading={isSemanticOrHybridSearch ? intelligentSearch.isLoading : emails.isLoading}
+                  error={isSemanticOrHybridSearch ? intelligentSearch.error?.message : emails.error?.message}
+                  classifications={classificationsQuery.data}
+                  isClassifying={classifyBatch.isPending}
+                  priorityFilter={activePriorityFilter}
+                  onPriorityFilterChange={setActivePriorityFilter}
+                  sortMode={sortMode}
+                  onSortModeChange={setSortMode}
+                  searchInfo={
+                    isSearchActive
+                      ? {
+                          query: searchQuery,
+                          mode: isSemanticOrHybridSearch ? searchMode : "keyword",
+                          totalCount: processedEmails.length,
+                          stats: intelligentSearch.data?.stats,
+                        }
+                      : undefined
+                  }
                   selectedId={selectedId}
                   selectedIds={selectedIds}
                   onSelectionChange={setSelectedIds}
@@ -1402,6 +1603,13 @@ function MailList({
   isDeleting,
   isRestoring,
   isBulkActionPending,
+  classifications,
+  isClassifying,
+  priorityFilter,
+  onPriorityFilterChange,
+  sortMode,
+  onSortModeChange,
+  searchInfo,
 }: {
   view: "inbox" | "starred" | "drafts" | "sent" | "trash";
   emails:
@@ -1412,6 +1620,9 @@ function MailList({
         from: string;
         date: string | null;
         labelIds: string[];
+        matchOrigin?: "keyword" | "semantic" | "hybrid";
+        relevanceScore?: number;
+        matchedFields?: string[];
       }[]
     | undefined;
   isLoading: boolean;
@@ -1433,6 +1644,31 @@ function MailList({
   isDeleting: boolean;
   isRestoring?: boolean;
   isBulkActionPending: boolean;
+  classifications?: Record<
+    string,
+    {
+      priority: string;
+      confidence: number;
+      reason: string;
+      category?: string | null;
+      userOverride?: boolean;
+    }
+  >;
+  isClassifying?: boolean;
+  priorityFilter?: PriorityFilterOption;
+  onPriorityFilterChange?: (priority: PriorityFilterOption) => void;
+  sortMode?: "date-desc" | "priority-desc" | "date-asc";
+  onSortModeChange?: (mode: "date-desc" | "priority-desc" | "date-asc") => void;
+  searchInfo?: {
+    query: string;
+    mode: string;
+    totalCount: number;
+    stats?: {
+      keywordMatches: number;
+      semanticMatches: number;
+      hybridMatches: number;
+    };
+  };
 }) {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -1464,6 +1700,11 @@ function MailList({
       <EmptyPanel
         title="Trash is empty"
         description="Messages you delete will appear here."
+      />
+    ) : searchInfo ? (
+      <EmptyPanel
+        title="No search results"
+        description={`No emails matched "${searchInfo.query}" in ${searchInfo.mode} search. Try switching search mode or adjusting filters.`}
       />
     ) : (
       <EmptyPanel
@@ -1636,16 +1877,96 @@ function MailList({
             </Button>
           </>
         ) : (
-          <span className="text-muted-foreground text-xs">
-            Select all
-          </span>
+          <div className="flex flex-1 items-center justify-between gap-2">
+            <span className="text-muted-foreground text-xs">
+              Select all
+            </span>
+
+            {/* Priority Filter and Sort Controls */}
+            <div className="flex items-center gap-2 ml-auto">
+              {onPriorityFilterChange && (
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground text-[11px] hidden sm:inline">Priority:</span>
+                  <select
+                    value={priorityFilter ?? "all"}
+                    onChange={(e) => onPriorityFilterChange(e.target.value as PriorityFilterOption)}
+                    aria-label="Filter emails by priority"
+                    className="h-7 text-xs bg-muted/40 border border-border/60 rounded px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  >
+                    <option value="all">All Priorities</option>
+                    <option value="high">High Priority (Urgent & Important)</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="important">Important</option>
+                    <option value="normal">Normal</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+              )}
+
+              {onSortModeChange && (
+                <div className="flex items-center gap-1">
+                  <select
+                    value={sortMode ?? "date-desc"}
+                    onChange={(e) => onSortModeChange(e.target.value as "date-desc" | "priority-desc" | "date-asc")}
+                    aria-label="Sort emails"
+                    className="h-7 text-xs bg-muted/40 border border-border/60 rounded px-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  >
+                    <option value="date-desc">Newest first</option>
+                    <option value="priority-desc">Priority (Urgent first)</option>
+                    <option value="date-asc">Oldest first</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
+
+      {/* Search Status & Origin Banner */}
+      {searchInfo && (
+        <div className="bg-muted/40 border-b px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-foreground">
+              {searchInfo.totalCount} {searchInfo.totalCount === 1 ? "result" : "results"}
+            </span>
+            <span className="text-muted-foreground">for &ldquo;{searchInfo.query}&rdquo;</span>
+            <span className={cn(
+              "text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wider",
+              searchInfo.mode === "hybrid" && "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
+              searchInfo.mode === "semantic" && "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+              searchInfo.mode === "keyword" && "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+            )}>
+              {searchInfo.mode} search
+            </span>
+          </div>
+
+          {searchInfo.stats && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              {searchInfo.stats.keywordMatches > 0 && (
+                <span>{searchInfo.stats.keywordMatches} keyword</span>
+              )}
+              {searchInfo.stats.semanticMatches > 0 && (
+                <span>{searchInfo.stats.semanticMatches} semantic</span>
+              )}
+              {searchInfo.stats.hybridMatches > 0 && (
+                <span>{searchInfo.stats.hybridMatches} hybrid</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <ul>
         {emails.map((email) => {
           const isUnread = email.labelIds.includes("UNREAD");
           const isSelected = selectedIds.includes(email.id);
+          const cls = classifications?.[email.id];
+          const priorityLevel: PriorityType = cls
+            ? (cls.priority as PriorityType)
+            : isClassifying
+              ? "analyzing"
+              : "normal";
+          const isUrgent = priorityLevel === "urgent";
 
           return (
             <li
@@ -1673,6 +1994,7 @@ function MailList({
                   isUnread && "bg-muted/40",
                   isSelected && "bg-accent/60",
                   selectedId === email.id && "bg-accent",
+                  isUrgent && "border-l-3 border-l-rose-500",
                 )}
               >
                 <div className="flex items-start pt-0.5">
@@ -1692,18 +2014,39 @@ function MailList({
                   className="min-w-0 text-left"
                 >
                   <span className="min-w-0">
-                    <span
-                      className={cn(
-                        "block truncate text-sm",
-                        isUnread
-                          ? "font-semibold text-foreground"
-                          : "font-normal text-foreground",
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={cn(
+                          "truncate text-sm",
+                          isUnread
+                            ? "font-semibold text-foreground"
+                            : "font-normal text-foreground",
+                        )}
+                      >
+                        {email.from
+                          ? formatSender(email.from)
+                          : "Unknown sender"}
+                      </span>
+
+                      <PriorityBadge
+                        priority={priorityLevel}
+                        confidence={cls?.confidence}
+                        reason={cls?.reason}
+                        category={cls?.category}
+                        size="sm"
+                      />
+
+                      {email.matchOrigin && (
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.2 rounded border capitalize font-medium",
+                          email.matchOrigin === "hybrid" && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                          email.matchOrigin === "semantic" && "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+                          email.matchOrigin === "keyword" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                        )}>
+                          {email.matchOrigin} match
+                        </span>
                       )}
-                    >
-                      {email.from
-                        ? formatSender(email.from)
-                        : "Unknown sender"}
-                    </span>
+                    </div>
 
                     <span
                       className={cn(
@@ -2053,6 +2396,10 @@ function FullEmailView({
   isStarred,
   isStarPending,
   onToggleStar,
+  classification,
+  onOverridePriority,
+  onReanalyze,
+  isReanalyzing,
   onDelete,
   onRestore,
   onPermanentDelete,
@@ -2088,6 +2435,20 @@ function FullEmailView({
   isStarred: boolean;
   isStarPending: boolean;
   onToggleStar: () => void;
+  classification?: {
+    id: string;
+    priority: string;
+    confidence: number;
+    reason: string;
+    category?: string | null;
+    userOverride?: boolean;
+  };
+  onOverridePriority?: (
+    messageId: string,
+    priority: "urgent" | "important" | "normal" | "low",
+  ) => void;
+  onReanalyze?: (email: NonNullable<typeof selectedEmail>) => void;
+  isReanalyzing?: boolean;
   onDelete?: (messageId: string) => void;
   onRestore?: (messageId: string) => void;
   onPermanentDelete?: (messageId: string) => void;
@@ -2143,6 +2504,90 @@ function FullEmailView({
               </div>
             </div>
           )}
+
+          {/* AI Priority & Intelligence Card */}
+          <div className="mb-5 rounded-lg border border-border/80 bg-muted/20 p-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Priority:
+                </span>
+                <PriorityBadge
+                  priority={
+                    classification
+                      ? (classification.priority as PriorityType)
+                      : isReanalyzing
+                        ? "analyzing"
+                        : "normal"
+                  }
+                  confidence={classification?.confidence}
+                  category={classification?.category}
+                  size="md"
+                />
+                {classification?.category && (
+                  <span className="text-xs bg-muted border px-2 py-0.5 rounded-full text-foreground font-medium">
+                    {classification.category}
+                  </span>
+                )}
+                {classification?.userOverride && (
+                  <span className="text-[11px] text-muted-foreground bg-background border px-2 py-0.5 rounded font-medium">
+                    User Override
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {onOverridePriority && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="hidden sm:inline font-medium">Adjust:</span>
+                    <select
+                      value={classification?.priority ?? "normal"}
+                      onChange={(e) =>
+                        onOverridePriority(
+                          selectedEmail.id,
+                          e.target.value as "urgent" | "important" | "normal" | "low",
+                        )
+                      }
+                      aria-label="Manually adjust priority"
+                      className="h-7 text-xs bg-background border rounded px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="urgent">Urgent</option>
+                      <option value="important">Important</option>
+                      <option value="normal">Normal</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                )}
+
+                {onReanalyze && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onReanalyze(selectedEmail)}
+                    disabled={isReanalyzing}
+                    className="h-7 text-xs gap-1.5"
+                    title="Run fresh AI priority analysis on this email"
+                  >
+                    <Sparkles
+                      className={cn(
+                        "h-3 w-3",
+                        isReanalyzing && "animate-spin text-primary",
+                      )}
+                    />
+                    <span>{isReanalyzing ? "Analyzing..." : "Re-analyze with AI"}</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {classification?.reason && (
+              <div className="mt-3 text-xs text-muted-foreground bg-background/80 rounded-md border border-border/50 p-2.5 leading-relaxed">
+                <span className="font-semibold text-foreground">AI Reasoning: </span>
+                {classification.reason}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-start justify-between gap-4">
             <h2 className="font-heading min-w-0 text-2xl leading-tight font-semibold">

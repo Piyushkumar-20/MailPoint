@@ -6,6 +6,7 @@ import {
   unique,
   boolean,
   index,
+  real,
 } from "drizzle-orm/pg-core";
 
 export const corsairIntegrations = pgTable("corsair_integrations", {
@@ -206,3 +207,58 @@ export const verification = pgTable(
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
+
+export const emailClassifications = pgTable(
+  "email_classifications",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    messageId: text("message_id").notNull(),
+    priority: text("priority").notNull(), // 'urgent' | 'important' | 'normal' | 'low'
+    confidence: real("confidence").notNull(),
+    reason: text("reason").notNull(),
+    category: text("category"),
+    userOverride: boolean("user_override").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("email_classifications_tenant_message_unique").on(
+      table.tenantId,
+      table.messageId,
+    ),
+    index("email_classifications_tenant_priority_idx").on(
+      table.tenantId,
+      table.priority,
+    ),
+  ],
+);
+
+export const emailEmbeddings = pgTable(
+  "email_embeddings",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    messageId: text("message_id").notNull(),
+    embedding: jsonb("embedding").notNull(), // array of 768 floats
+    chunkContent: text("chunk_content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("email_embeddings_tenant_message_unique").on(
+      table.tenantId,
+      table.messageId,
+    ),
+    index("email_embeddings_tenant_idx").on(table.tenantId),
+  ],
+);
+
