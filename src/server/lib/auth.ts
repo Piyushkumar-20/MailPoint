@@ -20,6 +20,7 @@ export const auth = betterAuth({
     "http://localhost:3000",
     "https://slimy-comfy-panorama.ngrok-free.dev",
     "https://mail-point.vercel.app",
+    "https://mailpoint.piyushdev.online"
   ],
 
   emailAndPassword: {
