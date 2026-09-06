@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/server/db";
 import {
   entitlementAuditLogs,
   entitlements,
+  payments,
   plans,
 } from "@/server/db/schema";
 
@@ -261,6 +262,18 @@ export async function activateSelfPaidProEntitlement(params: {
   endsAt.setMonth(endsAt.getMonth() + 1);
 
   await db.transaction(async (tx) => {
+    const existingPurchase = await tx.query.entitlementAuditLogs.findFirst({
+      where: and(
+        eq(entitlementAuditLogs.tenantId, params.tenantId),
+        eq(entitlementAuditLogs.action, "purchase"),
+        sql`${entitlementAuditLogs.metadata} @> ${JSON.stringify({ paymentId: params.paymentId })}::jsonb`,
+      ),
+    });
+
+    if (existingPurchase) {
+      return;
+    }
+
     const existing = await tx.query.entitlements.findFirst({
       where: eq(entitlements.tenantId, params.tenantId),
     });
@@ -300,7 +313,7 @@ export async function activateSelfPaidProEntitlement(params: {
       entitlementId,
       action: "purchase",
       source: "self_paid",
-      reason: "Razorpay Standard Checkout payment verified",
+      reason: "Razorpay payment confirmed",
       metadata: {
         paymentId: params.paymentId,
         amount: params.amount,
@@ -317,4 +330,76 @@ export async function activateSelfPaidProEntitlement(params: {
   }
 
   return entitlement;
+}
+
+export async function reconcileSelfPaidProRefund(params: {
+  tenantId: string;
+  paymentId: string;
+}): Promise<EntitlementDetails | null> {
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    const existing = await tx.query.entitlements.findFirst({
+      where: eq(entitlements.tenantId, params.tenantId),
+    });
+
+    if (
+      !existing ||
+      existing?.planId !== "plan_pro" ||
+      existing?.source !== "self_paid" ||
+      existing?.status !== "active"
+    ) {
+      return;
+    }
+
+    const [latestPaidPayment] = await tx
+      .select({
+        providerPaymentId: payments.providerPaymentId,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.tenantId, params.tenantId),
+          eq(payments.provider, "razorpay"),
+          inArray(payments.status, ["captured", "refunded"]),
+        ),
+      )
+      .orderBy(desc(payments.paidAt), desc(payments.createdAt))
+      .limit(1);
+
+    if (latestPaidPayment?.providerPaymentId !== params.paymentId) {
+      return;
+    }
+
+    await tx
+      .update(entitlements)
+      .set({
+        planId: "plan_free",
+        source: "system",
+        status: "active",
+        subscriptionId: null,
+        grantedByUserId: null,
+        startsAt: now,
+        endsAt: null,
+        revokedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(entitlements.id, existing.id));
+
+    await tx.insert(entitlementAuditLogs).values({
+      id: crypto.randomUUID(),
+      tenantId: params.tenantId,
+      entitlementId: existing.id,
+      action: "refund",
+      source: "self_paid",
+      reason: "Razorpay payment was fully refunded",
+      metadata: {
+        paymentId: params.paymentId,
+        previousPlanId: existing.planId,
+        previousSource: existing.source,
+      },
+    });
+  });
+
+  return getEntitlementByTenantId(params.tenantId);
 }
