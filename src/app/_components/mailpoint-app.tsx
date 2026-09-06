@@ -35,6 +35,7 @@ import { BillingCard } from "@/app/_components/billing-card";
 import { ActionProvider, useActions } from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { api } from "@/trpc/react";
 import { formatWeekLabel, getWeekBounds } from "@/lib/week";
 
 const SECTION_PATHS: Record<AppSection, string> = {
@@ -68,16 +69,19 @@ function SettingsPanel({
       <div className="space-y-4">
         <div className="bg-card text-card-foreground rounded-lg border p-5">
           <h2 className="mb-4 text-sm font-semibold">Account</h2>
+
           <dl className="flex flex-col gap-3 text-sm">
             <div className="flex justify-between border-b pb-3">
               <dt className="text-muted-foreground">Name</dt>
               <dd>{user?.name ?? "-"}</dd>
             </div>
+
             <div className="flex justify-between border-b pb-3">
               <dt className="text-muted-foreground">Email</dt>
               <dd>{user?.email ?? "-"}</dd>
             </div>
           </dl>
+
           <Button
             type="button"
             onClick={onSignOut}
@@ -101,7 +105,16 @@ function MailPointAppInner({
   initialSection?: AppSection;
 }) {
   const router = useRouter();
+
   const { data: session } = authClient.useSession();
+
+  const { data: adminStatus } = api.admin.getStatus.useQuery(undefined, {
+    enabled: Boolean(session?.user),
+    retry: false,
+  });
+
+  const isAdmin = adminStatus?.isAdmin === true;
+
   const user = session?.user
     ? {
         name: session.user.name,
@@ -112,17 +125,26 @@ function MailPointAppInner({
 
   const [activeSection, setActiveSection] =
     useState<AppSection>(initialSection);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const [sidebarFooterHeight, setSidebarFooterHeight] = useState<number | null>(
     null,
   );
+
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Gmail search: lifted here so the header search box can drive GmailPanel.
   const [mailSearchInput, setMailSearchInput] = useState("");
+
   const [activeMailSearch, setActiveMailSearch] = useState("");
-  const [searchMode, setSearchMode] = useState<"hybrid" | "semantic" | "keyword">("hybrid");
+
+  const [searchMode, setSearchMode] = useState<
+    "hybrid" | "semantic" | "keyword"
+  >("hybrid");
+
   const [searchPriorityFilter, setSearchPriorityFilter] = useState<
     "all" | "urgent" | "important" | "normal" | "low" | "high"
   >("all");
@@ -130,15 +152,20 @@ function MailPointAppInner({
   // Calendar week nav + create signal: lifted here so the header controls
   // CalendarPanel without changing its internal query logic.
   const [weekOffset, setWeekOffset] = useState(0);
+
   const [focusCreateSignal, setFocusCreateSignal] = useState(0);
+
   const [calendarComposeRequest, setCalendarComposeRequest] = useState<{
     to: string;
     subject: string;
     body: string;
     requestId: number;
   } | null>(null);
+
   const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
+
   const weekLabel = formatWeekLabel(week.start, week.end);
+
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
@@ -156,12 +183,14 @@ function MailPointAppInner({
       window.removeEventListener("popstate", handlePopState);
     };
   }, []);
+
   const handleEmailAttendees = (event: CalendarEvent) => {
     const attendees = Array.from(
       new Set(
         event.attendees
           .map((attendee) => {
             const match = /<([^>]+)>/.exec(attendee);
+
             return match?.[1] ?? attendee;
           })
           .map((email) => email.trim().toLowerCase())
@@ -194,12 +223,20 @@ function MailPointAppInner({
     });
 
     setActiveSection("inbox");
+
     window.history.pushState({}, "", "/mail/inbox");
   };
+
+  const handleAdminDashboard = () => {
+    router.push("/admin");
+  };
+
   const handleSignOut = async () => {
     try {
       setIsSigningOut(true);
+
       await authClient.signOut();
+
       router.replace("/login");
       router.refresh();
     } finally {
@@ -207,12 +244,16 @@ function MailPointAppInner({
     }
   };
 
-  const handleNavigate = useCallback((section: AppSection) => {
-    setActiveSection(section);
-    router.push(SECTION_PATHS[section]);
-  }, [router]);
+  const handleNavigate = useCallback(
+    (section: AppSection) => {
+      setActiveSection(section);
+      router.push(SECTION_PATHS[section]);
+    },
+    [router],
+  );
 
-  const { registerActions, openCommandPalette, openShortcutsHelp } = useActions();
+  const { registerActions, openCommandPalette, openShortcutsHelp } =
+    useActions();
 
   // Register Global Navigation, Calendar, AI, and System Actions
   useEffect(() => {
@@ -239,7 +280,7 @@ function MailPointAppInner({
       {
         id: "nav.sent",
         label: "Go to Sent",
-        description: "View sent emails",
+        description: "View sent messages",
         category: "navigation",
         icon: Send,
         priority: 80,
@@ -308,13 +349,18 @@ function MailPointAppInner({
         description: "Schedule a new event or meeting",
         category: "calendar",
         icon: CalendarDays,
-        shortcut: { key: "c", shift: true, display: "Shift+C" },
+        shortcut: {
+          key: "c",
+          shift: true,
+          display: "Shift+C",
+        },
         priority: 92,
         mobileVisible: true,
         execute: () => {
           if (activeSection !== "calendar") {
             handleNavigate("calendar");
           }
+
           setFocusCreateSignal((n) => n + 1);
         },
       },
@@ -350,7 +396,11 @@ function MailPointAppInner({
         description: "Search keywords, senders, or topics",
         category: "mail",
         icon: Search,
-        shortcut: { key: "/", ctrlOrCmd: true, display: "⌘/" },
+        shortcut: {
+          key: "/",
+          ctrlOrCmd: true,
+          display: "⌘/",
+        },
         priority: 85,
         mobileVisible: true,
         execute: () => {
@@ -359,13 +409,16 @@ function MailPointAppInner({
             activeSection === "starred" ||
             activeSection === "sent" ||
             activeSection === "trash";
+
           if (!isMailSec) {
             handleNavigate("inbox");
           }
+
           setTimeout(() => {
             const input = document.getElementById(
               "mail-search-input",
             ) as HTMLInputElement | null;
+
             if (input) {
               input.focus();
               input.select();
@@ -383,7 +436,10 @@ function MailPointAppInner({
         description: "View keyboard shortcuts and touch guide",
         category: "system",
         icon: Command,
-        shortcut: { key: "?", display: "?" },
+        shortcut: {
+          key: "?",
+          display: "?",
+        },
         priority: 40,
         execute: () => openShortcutsHelp(),
       },
@@ -409,6 +465,8 @@ function MailPointAppInner({
         user={user}
         onSignOut={handleSignOut}
         isSigningOut={isSigningOut}
+        onAdmin={handleAdminDashboard}
+        isAdmin={isAdmin}
         mobileOpen={mobileSidebarOpen}
         onMobileOpenChange={setMobileSidebarOpen}
       />
@@ -421,6 +479,8 @@ function MailPointAppInner({
           onSignOut={handleSignOut}
           isSigningOut={isSigningOut}
           onSettings={() => handleNavigate("settings")}
+          onAdmin={handleAdminDashboard}
+          isAdmin={isAdmin}
           mailSearch={
             activeSection === "inbox" ||
             activeSection === "starred" ||
@@ -467,9 +527,11 @@ function MailPointAppInner({
               onNavigate={handleNavigate}
             />
           )}
+
           {activeSection === "agent" && (
             <AgentPanel footerMinHeight={sidebarFooterHeight} />
           )}
+
           {(activeSection === "inbox" ||
             activeSection === "starred" ||
             activeSection === "sent" ||
@@ -484,6 +546,7 @@ function MailPointAppInner({
               calendarComposeRequest={calendarComposeRequest}
             />
           )}
+
           {activeSection === "calendar" && (
             <CalendarPanel
               weekOffset={weekOffset}
@@ -491,6 +554,7 @@ function MailPointAppInner({
               onEmailAttendees={handleEmailAttendees}
             />
           )}
+
           {activeSection === "settings" && (
             <SettingsPanel
               user={user}
@@ -498,6 +562,7 @@ function MailPointAppInner({
               isSigningOut={isSigningOut}
             />
           )}
+
           {activeSection === "integrations" && <IntegrationsPanel />}
         </main>
       </div>

@@ -13,6 +13,7 @@ import {
   PenSquare,
   Send,
   Settings,
+  ShieldCheck,
   Star,
   Trash2,
 } from "lucide-react";
@@ -90,6 +91,8 @@ export function AccountMenu({
   onSignOut,
   isSigningOut,
   onSettings,
+  onAdmin,
+  isAdmin,
   align = "end",
   children,
 }: {
@@ -97,6 +100,8 @@ export function AccountMenu({
   onSignOut: () => void;
   isSigningOut: boolean;
   onSettings: () => void;
+  onAdmin: () => void;
+  isAdmin: boolean;
   align?: "start" | "end";
   children: React.ReactElement;
 }) {
@@ -119,6 +124,13 @@ export function AccountMenu({
           <Settings className="mr-2 h-4 w-4" />
           Settings
         </DropdownMenuItem>
+
+        {isAdmin && (
+          <DropdownMenuItem onClick={onAdmin}>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Admin Dashboard
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem
           onClick={onSignOut}
@@ -190,6 +202,8 @@ function SidebarBody({
   user,
   onSignOut,
   isSigningOut,
+  onAdmin,
+  isAdmin,
   showCollapseToggle,
 }: {
   activeSection: AppSection;
@@ -200,6 +214,8 @@ function SidebarBody({
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
+  onAdmin: () => void;
+  isAdmin: boolean;
   showCollapseToggle: boolean;
 }) {
   const footerRef = React.useRef<HTMLDivElement>(null);
@@ -288,6 +304,8 @@ function SidebarBody({
           onSignOut={onSignOut}
           isSigningOut={isSigningOut}
           onSettings={() => onNavigate("settings")}
+          onAdmin={onAdmin}
+          isAdmin={isAdmin}
           align="start"
         >
           <button
@@ -349,6 +367,8 @@ export function AppSidebar({
   user,
   onSignOut,
   isSigningOut,
+  onAdmin,
+  isAdmin,
   mobileOpen,
   onMobileOpenChange,
 }: {
@@ -360,6 +380,8 @@ export function AppSidebar({
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
+  onAdmin: () => void;
+  isAdmin: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
 }) {
@@ -381,6 +403,8 @@ export function AppSidebar({
           user={user}
           onSignOut={onSignOut}
           isSigningOut={isSigningOut}
+          onAdmin={onAdmin}
+          isAdmin={isAdmin}
           showCollapseToggle
         />
       </aside>
@@ -400,6 +424,8 @@ export function AppSidebar({
             user={user}
             onSignOut={onSignOut}
             isSigningOut={isSigningOut}
+            onAdmin={onAdmin}
+            isAdmin={isAdmin}
             showCollapseToggle={false}
           />
         </SheetContent>

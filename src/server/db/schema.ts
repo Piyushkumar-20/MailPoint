@@ -104,6 +104,7 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  isAdmin: boolean("is_admin").notNull().default(false),
 });
 
 export const tenant = pgTable("tenant", {

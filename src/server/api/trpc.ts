@@ -11,6 +11,8 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import { auth } from "@/server/lib/auth";
 import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
 /**
  * 1. CONTEXT
@@ -125,3 +127,29 @@ export const protectedProcedure = t.procedure
       },
     });
   });
+
+/**
+ * Admin-only procedure. Admin status is checked against the database on every
+ * request so client-side visibility can never grant administrative access.
+ */
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const user = await ctx.db.query.users.findFirst({
+    where: eq(users.id, ctx.session.user.id),
+    columns: { isAdmin: true },
+  });
+
+  if (!user?.isAdmin) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Administrator access is required.",
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
+      isAdmin: true,
+    },
+  });
+});

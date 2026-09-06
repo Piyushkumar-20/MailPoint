@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Command, HelpCircle, Menu, Plus } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Command,
+  HelpCircle,
+  Menu,
+  Plus,
+} from "lucide-react";
 
 import { useActions } from "@/lib/actions/action-context";
 import {
@@ -28,12 +35,14 @@ const SECTION_TITLES: Record<AppSection, string> = {
 
 function initialsFor(user: SidebarUser | null) {
   const source = user?.name ?? user?.email ?? "";
+
   const initials = source
     .split(/[\s@.]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
+
   return initials || "?";
 }
 
@@ -67,6 +76,8 @@ export function AppHeader({
   onSignOut,
   isSigningOut,
   onSettings,
+  onAdmin,
+  isAdmin,
   mailSearch,
   calendarControls,
 }: {
@@ -76,6 +87,8 @@ export function AppHeader({
   onSignOut: () => void;
   isSigningOut: boolean;
   onSettings: () => void;
+  onAdmin: () => void;
+  isAdmin: boolean;
   mailSearch?: MailSearchProps;
   calendarControls?: CalendarControlsProps;
 }) {
@@ -101,11 +114,14 @@ export function AppHeader({
 
       <div className="hidden min-w-0 items-baseline gap-2 sm:flex">
         <span className="font-heading text-sm font-semibold">MailPoint</span>
+
         <span className="text-muted-foreground">/</span>
+
         <h1 className="text-muted-foreground truncate text-sm font-medium">
           {SECTION_TITLES[section]}
         </h1>
       </div>
+
       <h1 className="shrink-0 text-sm font-semibold sm:hidden">
         {SECTION_TITLES[section]}
       </h1>
@@ -113,7 +129,7 @@ export function AppHeader({
       <div className="min-w-0 flex-1" />
 
       {isMailSection && mailSearch && (
-        <div className="hidden sm:block w-full max-w-sm md:max-w-md">
+        <div className="hidden w-full max-w-sm sm:block md:max-w-md">
           <SearchBar
             value={mailSearch.value}
             onChange={mailSearch.onChange}
@@ -139,6 +155,7 @@ export function AppHeader({
           >
             Today
           </Button>
+
           <button
             type="button"
             onClick={calendarControls.onPrevWeek}
@@ -147,6 +164,7 @@ export function AppHeader({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
+
           <button
             type="button"
             onClick={calendarControls.onNextWeek}
@@ -155,9 +173,11 @@ export function AppHeader({
           >
             <ChevronRight className="h-4 w-4" />
           </button>
+
           <span className="text-muted-foreground hidden px-1 text-xs lg:inline">
             {calendarControls.weekLabel}
           </span>
+
           <Button
             type="button"
             size="sm"
@@ -174,12 +194,14 @@ export function AppHeader({
       <button
         type="button"
         onClick={openCommandPalette}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground hidden md:flex h-8 items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 text-xs transition-colors shadow-2xs hover:border-border"
+        className="text-muted-foreground hover:bg-muted hover:text-foreground border-border/60 bg-muted/30 hover:border-border hidden h-8 items-center gap-2 rounded-md border px-2.5 text-xs shadow-2xs transition-colors md:flex"
         aria-label="Open commands (⌘K)"
         title="Open commands (⌘K)"
       >
         <Command className="h-3.5 w-3.5" />
+
         <span className="text-muted-foreground">Commands</span>
+
         <kbd className="bg-background text-muted-foreground rounded border px-1 font-mono text-[10px]">
           ⌘K
         </kbd>
@@ -214,10 +236,13 @@ export function AppHeader({
         onSignOut={onSignOut}
         isSigningOut={isSigningOut}
         onSettings={onSettings}
+        onAdmin={onAdmin}
+        isAdmin={isAdmin}
       >
         <button type="button" className="shrink-0 rounded-full">
           <Avatar className="h-7 w-7">
             <AvatarImage src={user?.image ?? undefined} alt="" />
+
             <AvatarFallback className="bg-primary/15 text-primary text-xs">
               {initialsFor(user)}
             </AvatarFallback>
