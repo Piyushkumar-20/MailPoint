@@ -3,18 +3,30 @@
 import { useState, type ComponentType, type ReactNode } from "react";
 import {
   ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
   CreditCard,
   Crown,
   DollarSign,
+  Globe2,
+  Mail,
   Search,
   ShieldCheck,
   Users,
+  XCircle,
 } from "lucide-react";
 
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 function formatDate(value: Date | string | null) {
   if (!value) return "—";
@@ -77,6 +89,79 @@ function StatCard({
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
+      <span className="text-muted-foreground text-sm">{label}</span>
+      <span className="text-right text-sm font-medium">{value}</span>
+    </div>
+  );
+}
+
+function ConnectionRow({
+  icon: Icon,
+  label,
+  state,
+  loading,
+  last = false,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  state: string | undefined;
+  loading: boolean;
+  last?: boolean;
+}) {
+  const isConnected = state === "connected";
+  const isMissing = state === "missing_credentials";
+  const isError = state === "error";
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 p-3",
+        !last && "border-b",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <Icon className="text-muted-foreground h-4 w-4 shrink-0" />
+        <span className="truncate text-sm font-medium">{label}</span>
+      </div>
+
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs",
+          isConnected &&
+            "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+          isMissing &&
+            "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+          isError &&
+            "border-destructive/20 bg-destructive/10 text-destructive",
+          !isConnected && !isMissing && !isError &&
+            "border-border bg-muted text-muted-foreground",
+        )}
+      >
+        {loading ? (
+          "Checking"
+        ) : isConnected ? (
+          <>
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Connected
+          </>
+        ) : isMissing ? (
+          "Needs reconnect"
+        ) : isError ? (
+          <>
+            <XCircle className="h-3.5 w-3.5" />
+            Connection issue
+          </>
+        ) : (
+          "Not connected"
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function AdminDashboard() {
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState<
@@ -85,6 +170,7 @@ export function AdminDashboard() {
   const [actionUserId, setActionUserId] = useState<string | null>(null);
   const [duration, setDuration] = useState("30");
   const [reason, setReason] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const overview = api.admin.getOverview.useQuery();
   const usersQuery = api.admin.getUsers.useQuery(
@@ -96,6 +182,14 @@ export function AdminDashboard() {
   const utils = api.useUtils();
 
   const users = usersQuery.data ?? [];
+
+  const selectedUser =
+    users.find((user) => user.id === selectedUserId) ?? null;
+
+  const connectionsQuery = api.admin.getUserConnections.useQuery(
+    { userId: selectedUserId ?? "" },
+    { enabled: Boolean(selectedUserId) },
+  );
 
   const refreshAdminData = async () => {
     await Promise.all([
@@ -451,7 +545,7 @@ export function AdminDashboard() {
             <div className="mb-4">
               <h2 className="text-lg font-semibold">Users</h2>
               <p className="text-muted-foreground text-sm">
-                Manage Pro access for MailPoint users.
+                Manage Pro access and inspect account connections.
               </p>
             </div>
 
@@ -460,7 +554,7 @@ export function AdminDashboard() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by email"
+                placeholder="Search by name or email"
                 className="pl-9"
               />
             </div>
@@ -481,19 +575,27 @@ export function AdminDashboard() {
               ) : (
                 <div className="divide-border divide-y">
                   {users.map((user) => {
-                    const isPro = user.planKey === "pro" && user.entitlementStatus === "active";
+                    const isPro =
+                      user.planKey === "pro" &&
+                      user.entitlementStatus === "active";
                     const isAdminGranted =
                       isPro && user.entitlementSource === "admin_granted";
 
                     return (
                       <div key={user.id} className="p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                          <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserId(user.id)}
+                            className="min-w-0 flex-1 text-left outline-none"
+                          >
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="truncate text-sm font-semibold">
                                 {user.name}
                               </p>
-                              {user.isAdmin && <StatusBadge tone="warning">Admin</StatusBadge>}
+                              {user.isAdmin && (
+                                <StatusBadge tone="warning">Admin</StatusBadge>
+                              )}
                               <StatusBadge tone={isPro ? "success" : "neutral"}>
                                 {isPro
                                   ? `Pro · ${isAdminGranted ? "Admin granted" : "Self paid"}`
@@ -508,7 +610,7 @@ export function AdminDashboard() {
                                 ? `Access ends ${formatDate(user.entitlementEndsAt)}`
                                 : `Joined ${formatDate(user.createdAt)}`}
                             </p>
-                          </div>
+                          </button>
 
                           <div className="flex shrink-0 gap-2">
                             {(!isPro || isAdminGranted) && (
@@ -546,7 +648,9 @@ export function AdminDashboard() {
                                 Duration
                                 <select
                                   value={duration}
-                                  onChange={(event) => setDuration(event.target.value)}
+                                  onChange={(event) =>
+                                    setDuration(event.target.value)
+                                  }
                                   className="border-input bg-background mt-1 h-8 w-full rounded-md border px-2 text-xs"
                                 >
                                   <option value="30">30 days</option>
@@ -559,7 +663,9 @@ export function AdminDashboard() {
                                 Reason
                                 <Input
                                   value={reason}
-                                  onChange={(event) => setReason(event.target.value)}
+                                  onChange={(event) =>
+                                    setReason(event.target.value)
+                                  }
                                   placeholder="Optional audit reason"
                                   className="mt-1 h-8"
                                 />
@@ -586,8 +692,181 @@ export function AdminDashboard() {
                 </div>
               )}
             </div>
+
+            <Sheet
+              open={Boolean(selectedUser)}
+              onOpenChange={(open) => {
+                if (!open) setSelectedUserId(null);
+              }}
+            >
+              <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+                {selectedUser && (
+                  <>
+                    <SheetHeader className="border-b">
+                      <SheetTitle>{selectedUser.name}</SheetTitle>
+                      <SheetDescription>
+                        {selectedUser.email}
+                      </SheetDescription>
+                    </SheetHeader>
+
+                    <div className="space-y-6 px-4 pb-6">
+                      <section>
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Account
+                        </h3>
+                        <div className="bg-card rounded-lg border p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-muted-foreground text-sm">
+                              Joined
+                            </span>
+                            <span className="text-right text-sm font-medium">
+                              {formatDate(selectedUser.createdAt)}
+                            </span>
+                          </div>
+                          {selectedUser.isAdmin && (
+                            <div className="mt-3">
+                              <StatusBadge tone="warning">
+                                Administrator
+                              </StatusBadge>
+                            </div>
+                          )}
+                        </div>
+                      </section>
+
+                      <section>
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Connections
+                        </h3>
+                        <div className="overflow-hidden rounded-lg border">
+                          <ConnectionRow
+                            icon={Globe2}
+                            label="Google account"
+                            state={connectionsQuery.data?.google}
+                            loading={connectionsQuery.isLoading}
+                          />
+                          <ConnectionRow
+                            icon={Mail}
+                            label="Gmail"
+                            state={connectionsQuery.data?.gmail}
+                            loading={connectionsQuery.isLoading}
+                          />
+                          <ConnectionRow
+                            icon={CalendarDays}
+                            label="Google Calendar"
+                            state={connectionsQuery.data?.googlecalendar}
+                            loading={connectionsQuery.isLoading}
+                            last={true}
+                          />
+                        </div>
+                        {connectionsQuery.error && (
+                          <p className="text-destructive mt-2 text-xs">
+                            {connectionsQuery.error.message}
+                          </p>
+                        )}
+                      </section>
+
+                      <section>
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Subscription
+                        </h3>
+                        <div className="bg-card rounded-lg border p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-muted-foreground text-sm">
+                              Plan
+                            </span>
+                            <StatusBadge
+                              tone={
+                                selectedUser.planKey === "pro" &&
+                                selectedUser.entitlementStatus === "active"
+                                  ? "success"
+                                  : "neutral"
+                              }
+                            >
+                              {selectedUser.planKey === "pro" &&
+                              selectedUser.entitlementStatus === "active"
+                                ? "Pro"
+                                : "Free"}
+                            </StatusBadge>
+                          </div>
+
+                          {selectedUser.entitlementSource &&
+                            selectedUser.planKey === "pro" && (
+                              <DetailRow
+                                label="Source"
+                                value={
+                                  selectedUser.entitlementSource ===
+                                  "admin_granted"
+                                    ? "Admin granted"
+                                    : "Self paid"
+                                }
+                              />
+                            )}
+
+                          {selectedUser.planKey === "pro" &&
+                            selectedUser.entitlementStatus === "active" && (
+                              <DetailRow
+                                label="Status"
+                                value="Active"
+                              />
+                            )}
+
+                          {selectedUser.entitlementEndsAt &&
+                            selectedUser.planKey === "pro" && (
+                              <DetailRow
+                                label="Expires"
+                                value={formatDate(selectedUser.entitlementEndsAt)}
+                              />
+                            )}
+                        </div>
+                      </section>
+
+                      <section className="border-t pt-5">
+                        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Actions
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                          {(!selectedUser.planKey ||
+                            selectedUser.planKey !== "pro" ||
+                            selectedUser.entitlementSource === "admin_granted") && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setActionUserId(selectedUser.id);
+                                setSelectedUserId(null);
+                                setReason("");
+                              }}
+                            >
+                              {selectedUser.planKey === "pro"
+                                ? "Manage Pro"
+                                : "Grant Pro"}
+                            </Button>
+                          )}
+                          {selectedUser.planKey === "pro" &&
+                            selectedUser.entitlementSource === "admin_granted" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                disabled={revokePro.isPending}
+                                onClick={() => {
+                                  setSelectedUserId(null);
+                                  void handleRevoke(selectedUser.id);
+                                }}
+                              >
+                                Revoke Pro
+                              </Button>
+                            )}
+                        </div>
+                      </section>
+                    </div>
+                  </>
+                )}
+              </SheetContent>
+            </Sheet>
           </section>
         )}
+
       </main>
     </div>
   );

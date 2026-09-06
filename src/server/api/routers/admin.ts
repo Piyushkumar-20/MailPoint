@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { adminProcedure, createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { TRPCError } from "@trpc/server";
+import { corsair } from "@/server/corsair";
 import { users, tenantMembers, tenant, entitlements, plans, payments, billingEvents, entitlementAuditLogs } from "@/server/db/schema";
 import {
   getEntitlementByTenantId,
@@ -311,6 +312,53 @@ export const adminRouter = createTRPCRouter({
         actorUserId: ctx.session.user.id,
         reason: input.reason ?? "Revoked by MailPoint admin",
       });
+    }),
+
+  getUserConnections: adminProcedure
+    .input(z.object({ userId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const membership = await ctx.db.query.tenantMembers.findFirst({
+        where: eq(tenantMembers.userId, input.userId),
+        columns: { tenantId: true },
+      });
+
+      if (!membership) {
+        return {
+          google: "not_connected" as const,
+          gmail: "not_connected" as const,
+          googlecalendar: "not_connected" as const,
+        };
+      }
+
+      try {
+        const status = await corsair.manage.connectionStatus.get({
+          tenantId: membership.tenantId,
+        });
+
+        const gmail = status.gmail ?? "not_connected";
+        const googlecalendar = status.googlecalendar ?? "not_connected";
+        const google =
+          gmail === "connected" || googlecalendar === "connected"
+            ? "connected"
+            : gmail === "missing_credentials" ||
+                googlecalendar === "missing_credentials"
+              ? "missing_credentials"
+              : "not_connected";
+
+        return {
+          google,
+          gmail,
+          googlecalendar,
+        };
+      } catch (error) {
+        console.error("[Admin] Failed to read connection status", error);
+
+        return {
+          google: "error" as const,
+          gmail: "error" as const,
+          googlecalendar: "error" as const,
+        };
+      }
     }),
 
   getUserEntitlement: adminProcedure
