@@ -20,7 +20,7 @@ const oxanium = Oxanium({
 export const metadata: Metadata = {
   title: "MailPoint",
   description: "Gmail and Calendar powered by MailPoint",
-  icons: [{ rel: "icon", url: "/favicon.ico" }],
+  icons: [{ rel: "icon", url: "/mailpoint-icon.png?v=2" }, { rel: "shortcut icon", url: "/favicon.ico?v=2" }],
 };
 
 export default function RootLayout({

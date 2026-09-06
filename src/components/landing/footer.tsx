@@ -65,9 +65,15 @@ export function LandingFooter() {
         <p className="text-[11px] text-zinc-400 dark:text-zinc-600">
           © {new Date().getFullYear()} MailPoint
         </p>
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-600">
-          Built with Next.js, PostgreSQL, and Corsair.
-        </p>
+        <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-400 dark:text-zinc-600">
+          <Link href="/privacy" className="hover:text-zinc-950 dark:hover:text-zinc-300">
+            Privacy Policy
+          </Link>
+          <Link href="/terms" className="hover:text-zinc-950 dark:hover:text-zinc-300">
+            Terms of Service
+          </Link>
+          <span className="hidden sm:inline">Built with Next.js, PostgreSQL, and Corsair.</span>
+        </div>
       </div>
     </footer>
   );
