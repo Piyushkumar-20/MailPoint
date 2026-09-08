@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bot,
@@ -34,9 +34,8 @@ import { Button } from "@/components/ui/button";
 import { BillingCard } from "@/app/_components/billing-card";
 import { ActionProvider, useActions } from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
-import { formatWeekLabel, getWeekBounds } from "@/lib/week";
+import { cn } from "@/lib/utils";
 
 const SECTION_PATHS: Record<AppSection, string> = {
   overview: "/dashboard",
@@ -149,11 +148,10 @@ function MailPointAppInner({
     "all" | "urgent" | "important" | "normal" | "low" | "high"
   >("all");
 
-  // Calendar week nav + create signal: lifted here so the header controls
-  // CalendarPanel without changing its internal query logic.
-  const [weekOffset, setWeekOffset] = useState(0);
-
+  // Calendar creation is kept as a small shell-level signal so global
+  // command-palette actions can open the Calendar composer.
   const [focusCreateSignal, setFocusCreateSignal] = useState(0);
+  const [calendarTodaySignal, setCalendarTodaySignal] = useState(0);
 
   const [calendarComposeRequest, setCalendarComposeRequest] = useState<{
     to: string;
@@ -161,10 +159,6 @@ function MailPointAppInner({
     body: string;
     requestId: number;
   } | null>(null);
-
-  const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
-
-  const weekLabel = formatWeekLabel(week.start, week.end);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -370,7 +364,13 @@ function MailPointAppInner({
         description: "Jump to current week",
         category: "calendar",
         isAvailable: () => activeSection === "calendar",
-        execute: () => setWeekOffset(0),
+        execute: () => {
+          if (activeSection !== "calendar") {
+            handleNavigate("calendar");
+          }
+
+          setCalendarTodaySignal((n) => n + 1);
+        },
       },
 
       // AI Actions
@@ -501,18 +501,6 @@ function MailPointAppInner({
                 }
               : undefined
           }
-          calendarControls={
-            activeSection === "calendar"
-              ? {
-                  weekLabel,
-                  onToday: () => setWeekOffset(0),
-                  onPrevWeek: () => setWeekOffset((w) => w - 1),
-                  onNextWeek: () => setWeekOffset((w) => w + 1),
-                  onCreateEvent: () => setFocusCreateSignal((n) => n + 1),
-                  isCurrentWeek: weekOffset === 0,
-                }
-              : undefined
-          }
         />
 
         <main
@@ -549,8 +537,8 @@ function MailPointAppInner({
 
           {activeSection === "calendar" && (
             <CalendarPanel
-              weekOffset={weekOffset}
               focusCreateSignal={focusCreateSignal}
+              todaySignal={calendarTodaySignal}
               onEmailAttendees={handleEmailAttendees}
             />
           )}

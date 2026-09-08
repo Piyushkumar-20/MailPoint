@@ -1,14 +1,6 @@
 "use client";
 
-import * as React from "react";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Command,
-  HelpCircle,
-  Menu,
-  Plus,
-} from "lucide-react";
+import { Command, HelpCircle, Menu } from "lucide-react";
 
 import { useActions } from "@/lib/actions/action-context";
 import {
@@ -18,7 +10,6 @@ import {
 } from "@/app/_components/app-sidebar";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 
 const SECTION_TITLES: Record<AppSection, string> = {
   overview: "Overview",
@@ -60,15 +51,6 @@ interface MailSearchProps {
   onPriorityFilterChange: (priority: PriorityFilterOption) => void;
 }
 
-interface CalendarControlsProps {
-  weekLabel: string;
-  onToday: () => void;
-  onPrevWeek: () => void;
-  onNextWeek: () => void;
-  onCreateEvent: () => void;
-  isCurrentWeek: boolean;
-}
-
 export function AppHeader({
   section,
   onOpenMobileSidebar,
@@ -79,7 +61,6 @@ export function AppHeader({
   onAdmin,
   isAdmin,
   mailSearch,
-  calendarControls,
 }: {
   section: AppSection;
   onOpenMobileSidebar: () => void;
@@ -90,7 +71,6 @@ export function AppHeader({
   onAdmin: () => void;
   isAdmin: boolean;
   mailSearch?: MailSearchProps;
-  calendarControls?: CalendarControlsProps;
 }) {
   const isMailSection =
     section === "inbox" ||
@@ -143,53 +123,6 @@ export function AppHeader({
         </div>
       )}
 
-      {section === "calendar" && calendarControls && (
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={calendarControls.onToday}
-            disabled={calendarControls.isCurrentWeek}
-            className="h-8 text-xs"
-          >
-            Today
-          </Button>
-
-          <button
-            type="button"
-            onClick={calendarControls.onPrevWeek}
-            aria-label="Previous week"
-            className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-
-          <button
-            type="button"
-            onClick={calendarControls.onNextWeek}
-            aria-label="Next week"
-            className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-
-          <span className="text-muted-foreground hidden px-1 text-xs lg:inline">
-            {calendarControls.weekLabel}
-          </span>
-
-          <Button
-            type="button"
-            size="sm"
-            onClick={calendarControls.onCreateEvent}
-            className="h-8 text-xs"
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Create
-          </Button>
-        </div>
-      )}
-
       {/* Command Palette Trigger (Desktop) */}
       <button
         type="button"
@@ -238,6 +171,7 @@ export function AppHeader({
         onSettings={onSettings}
         onAdmin={onAdmin}
         isAdmin={isAdmin}
+        triggerId="header-account-menu-trigger"
       >
         <button type="button" className="shrink-0 rounded-full">
           <Avatar className="h-7 w-7">

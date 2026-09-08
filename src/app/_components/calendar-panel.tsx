@@ -1,21 +1,31 @@
 "use client";
 
 import {
+  CalendarDays,
   CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  Grid2X2,
+  List,
   Mail,
-  MapPin,
-  Pencil,
   RefreshCw,
   Search,
-  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { formatAttendees, formatEventWhen, LinkifiedText } from "@/lib/display";
 import { cn } from "@/lib/utils";
-import { getWeekBounds } from "@/lib/week";
+import type { CalendarEvent as NormalizedCalendarEvent, CalendarView } from "@/types/calendar";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AgendaView,
+  CalendarViewEmpty,
+  CalendarViewError,
+  CalendarViewLoading,
+  DayView,
+  MonthView,
+  WeekView,
+} from "@/app/_components/calendar-views";
 import {
   Sheet,
   SheetContent,
@@ -23,24 +33,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-
-function toDatetimeLocalValue(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function toDatetimeLocalFromIso(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return toDatetimeLocalValue(date);
-}
 
 export type CalendarEvent = {
   id: string;
@@ -54,47 +46,146 @@ export type CalendarEvent = {
   htmlLink: string;
 };
 
-function dayKey(value: string) {
-  const date = new Date(value);
+function toDatetimeLocalValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
 
-  if (Number.isNaN(date.getTime())) return "Undated";
-
-  return date.toDateString();
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function dayLabel(value: string) {
+function toDatetimeLocalFromIso(value: string) {
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "Undated";
+  if (Number.isNaN(date.getTime())) return "";
 
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  return toDatetimeLocalValue(date);
 }
 
-function groupEventsByDay(events: CalendarEvent[]) {
-  const groups = new Map<string, CalendarEvent[]>();
+function startOfDay(value: Date) {
+  const result = new Date(value);
+  result.setHours(0, 0, 0, 0);
+  return result;
+}
 
-  for (const event of events) {
-    const key = dayKey(event.start);
+function startOfWeek(value: Date) {
+  const result = startOfDay(value);
+  const day = result.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  result.setDate(result.getDate() + mondayOffset);
+  return result;
+}
 
-    groups.set(key, [...(groups.get(key) ?? []), event]);
+function addDays(value: Date, amount: number) {
+  const result = new Date(value);
+  result.setDate(result.getDate() + amount);
+  return result;
+}
+
+function addMonths(value: Date, amount: number) {
+  const result = new Date(value);
+  result.setDate(1);
+  result.setMonth(result.getMonth() + amount);
+  return result;
+}
+
+function getCalendarTimeZone() {
+  return Intl.DateTimeFormat("en-US").resolvedOptions().timeZone || "UTC";
+}
+
+function getMonthGridRange(anchorDate: Date) {
+  const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+  const gridStart = startOfWeek(monthStart);
+  return { start: gridStart, end: addDays(gridStart, 42) };
+}
+
+function getViewRange(view: CalendarView, anchorDate: Date) {
+  if (view === "month") return getMonthGridRange(anchorDate);
+
+  if (view === "day") {
+    const start = startOfDay(anchorDate);
+    return { start, end: addDays(start, 1) };
   }
 
-  return Array.from(groups.entries()).map(([key, items]) => ({
-    key,
-    label: dayLabel(items[0]?.start ?? ""),
-    events: items,
-  }));
+  const start = startOfWeek(anchorDate);
+  return {
+    start,
+    end: addDays(start, view === "agenda" ? 14 : 7),
+  };
+}
+
+function formatViewLabel(view: CalendarView, anchorDate: Date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  if (view === "month") return formatter.format(anchorDate);
+
+  if (view === "day") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(anchorDate);
+  }
+
+  const range = getViewRange(view, anchorDate);
+  const end = new Date(range.end);
+  end.setDate(end.getDate() - 1);
+  const startPart = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(range.start);
+  const endPart = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(end);
+
+  return `${startPart} – ${endPart}`;
+}
+
+function navigateAnchor(view: CalendarView, anchorDate: Date, direction: number) {
+  if (view === "month") return addMonths(anchorDate, direction);
+  return addDays(anchorDate, view === "agenda" ? direction * 7 : direction * (view === "week" ? 7 : 1));
+}
+
+function normalizedToLegacyEvent(event: NormalizedCalendarEvent): CalendarEvent {
+  const start =
+    event.start.type === "timed"
+      ? event.start.dateTime
+      : `${event.start.date}T00:00:00.000Z`;
+  const end =
+    event.end.type === "timed"
+      ? event.end.dateTime
+      : `${event.end.date}T00:00:00.000Z`;
+
+  return {
+    id: event.id,
+    summary: event.summary,
+    description: event.description,
+    location: event.location,
+    status: event.status,
+    start,
+    end,
+    attendees: event.attendees
+      .map((attendee) => {
+        if (attendee.email && attendee.displayName) {
+          return `${attendee.displayName} <${attendee.email}>`;
+        }
+        return attendee.email ?? attendee.displayName ?? "";
+      })
+      .filter(Boolean),
+    htmlLink: event.htmlLink,
+  };
 }
 
 function extractAttendeeEmails(attendees: string[]) {
   return attendees
     .map((attendee) => {
       const emailMatch = /<([^>]+)>/.exec(attendee);
-
       return emailMatch?.[1] ?? attendee;
     })
     .map((email) => email.trim())
@@ -102,33 +193,31 @@ function extractAttendeeEmails(attendees: string[]) {
 }
 
 export function CalendarPanel({
-  weekOffset,
   focusCreateSignal,
+  todaySignal,
   onEmailAttendees,
 }: {
-  /** Which week to show, relative to the current week (0 = this week). Controlled by the header nav. */
-  weekOffset: number;
-  /** Bump this number to open the create-event sheet from the header button. */
   focusCreateSignal: number;
-  /** Opens the Gmail composer with the event attendees and context. */
+  todaySignal: number;
   onEmailAttendees: (event: CalendarEvent) => void;
 }) {
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
+  const [activeView, setActiveView] = useState<CalendarView>("agenda");
+  const [anchorDate, setAnchorDate] = useState(() => new Date());
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
-    null,
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+
+  const timeZone = getCalendarTimeZone();
+  const range = useMemo(
+    () => getViewRange(activeView, anchorDate),
+    [activeView, anchorDate],
   );
 
-  const week = useMemo(() => getWeekBounds(weekOffset), [weekOffset]);
-
   const defaultStart = new Date();
-
   defaultStart.setMinutes(0, 0, 0);
-
   const defaultEnd = new Date(defaultStart);
-
   defaultEnd.setHours(defaultEnd.getHours() + 1);
 
   const [summary, setSummary] = useState("");
@@ -139,31 +228,35 @@ export function CalendarPanel({
   const [attendees, setAttendees] = useState("");
 
   useEffect(() => {
-    if (focusCreateSignal > 0) {
-      setCreateOpen(true);
-    }
+    if (focusCreateSignal > 0) setCreateOpen(true);
   }, [focusCreateSignal]);
 
-  const utils = api.useUtils();
+  useEffect(() => {
+    if (todaySignal > 0) {
+      const today = new Date();
+      setAnchorDate(today);
+    }
+  }, [todaySignal]);
 
-  const events = api.calendar.searchEvents.useQuery({
-    query: activeSearch,
-    weekStart: week.start.toISOString(),
-    weekEnd: week.end.toISOString(),
-    limit: 50,
-    offset: 0,
+  const utils = api.useUtils();
+  const events = api.calendar.getEvents.useQuery({
+    start: range.start.toISOString(),
+    end: range.end.toISOString(),
+    timeZone,
+    query: activeSearch || undefined,
   });
 
-  const refreshEvents = api.calendar.refreshEvents.useMutation({
+  const refreshEvents = api.calendar.refreshEventsRange.useMutation({
     onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
       await utils.calendar.searchEvents.invalidate();
     },
   });
 
   const createDraft = api.calendar.createDraft.useMutation({
     onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
       await utils.calendar.searchEvents.invalidate();
-
       resetForm();
       setCreateOpen(false);
     },
@@ -171,8 +264,8 @@ export function CalendarPanel({
 
   const sendInvite = api.calendar.sendInvite.useMutation({
     onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
       await utils.calendar.searchEvents.invalidate();
-
       resetForm();
       setCreateOpen(false);
     },
@@ -180,18 +273,28 @@ export function CalendarPanel({
 
   const updateEvent = api.calendar.updateEvent.useMutation({
     onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
       await utils.calendar.searchEvents.invalidate();
-
       resetForm();
       setEditOpen(false);
       setSelectedEvent(null);
     },
   });
 
+  const moveEvent = api.calendar.updateEvent.useMutation({
+    onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
+      await utils.calendar.searchEvents.invalidate();
+    },
+    onError: (error) => {
+      window.alert(`Could not move event: ${error.message}`);
+    },
+  });
+
   const deleteEvent = api.calendar.deleteEvent.useMutation({
     onSuccess: async () => {
+      await utils.calendar.getEvents.invalidate();
       await utils.calendar.searchEvents.invalidate();
-
       resetForm();
       setEditOpen(false);
       setSelectedEvent(null);
@@ -208,12 +311,44 @@ export function CalendarPanel({
   function parseAttendees() {
     return attendees
       .split(",")
-      .map((a) => a.trim())
+      .map((value) => value.trim())
       .filter(Boolean);
   }
 
   function toIso(datetimeLocal: string) {
     return new Date(datetimeLocal).toISOString();
+  }
+
+  function handleMoveEvent(event: NormalizedCalendarEvent, target: Date) {
+    if (event.start.type !== "timed" || event.end.type !== "timed") return;
+
+    const originalStart = new Date(event.start.dateTime);
+    const originalEnd = new Date(event.end.dateTime);
+    const duration = Math.max(30 * 60_000, originalEnd.getTime() - originalStart.getTime());
+    const nextStart = new Date(target);
+    const nextEnd = new Date(nextStart.getTime() + duration);
+
+    moveEvent.mutate({
+      id: event.id,
+      summary: event.summary || "Untitled",
+      description: event.description || undefined,
+      location: event.location || undefined,
+      start: nextStart.toISOString(),
+      end: nextEnd.toISOString(),
+      attendees: event.attendees
+        .map((attendee) => attendee.email)
+        .filter((email): email is string => Boolean(email)),
+    });
+  }
+
+  function handleSelectTime(date: Date) {
+    const nextStart = new Date(date);
+    const nextEnd = new Date(nextStart);
+    nextEnd.setHours(nextEnd.getHours() + 1);
+
+    setStart(toDatetimeLocalValue(nextStart));
+    setEnd(toDatetimeLocalValue(nextEnd));
+    setCreateOpen(true);
   }
 
   const eventInput = {
@@ -225,70 +360,168 @@ export function CalendarPanel({
     attendees: parseAttendees(),
   };
 
-  function openEditEvent(event: CalendarEvent) {
-    setSelectedEvent(event);
+  function openEditEvent(event: NormalizedCalendarEvent) {
+    if (event.start.type === "allDay" || event.end.type === "allDay") return;
 
+    const legacyEvent = normalizedToLegacyEvent(event);
+    setSelectedEvent(legacyEvent);
     setSummary(event.summary);
     setDescription(event.description);
     setLocation(event.location);
-    setStart(toDatetimeLocalFromIso(event.start));
-    setEnd(toDatetimeLocalFromIso(event.end));
-    setAttendees(extractAttendeeEmails(event.attendees).join(", "));
-
+    setStart(toDatetimeLocalFromIso(event.start.dateTime));
+    setEnd(toDatetimeLocalFromIso(event.end.dateTime));
+    setAttendees(extractAttendeeEmails(legacyEvent.attendees).join(", "));
     setEditOpen(true);
   }
 
-  const groupedEvents = groupEventsByDay(events.data ?? []);
+  function handleOpenEvent(event: NormalizedCalendarEvent) {
+    if (event.start.type === "allDay") return;
+    openEditEvent(event);
+  }
+
+  function handleSelectDate(date: Date) {
+    setAnchorDate(date);
+    if (activeView === "month") {
+      setActiveView("day");
+    }
+  }
+
+  function handleToday() {
+    const today = new Date();
+    setAnchorDate(today);
+  }
+
+  const viewButtons: Array<{ id: CalendarView; label: string; icon: typeof List }> = [
+    { id: "agenda", label: "Agenda", icon: List },
+    { id: "month", label: "Month", icon: Grid2X2 },
+    { id: "week", label: "Week", icon: CalendarDays },
+    { id: "day", label: "Day", icon: CalendarDays },
+  ];
+
+  const eventsData = events.data ?? [];
+  const showEmpty = !events.isLoading && !events.error && events.data?.length === 0;
 
   return (
     <>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-4">
-          <div className="min-w-0">
-            <h2 className="font-heading text-base font-semibold">Calendar</h2>
+        <div className="shrink-0 border-b px-3 py-3 sm:px-4">
+          <div className="mx-auto flex max-w-6xl flex-col gap-3">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <h2 className="font-heading truncate text-base font-semibold">
+                      Calendar
+                    </h2>
+                    <span className="text-muted-foreground hidden text-xs sm:inline">
+                      Google Calendar
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {formatViewLabel(activeView, anchorDate)}
+                  </p>
+                </div>
+              </div>
 
-            <p className="text-muted-foreground text-xs">
-              {week.start.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}{" "}
-              -{" "}
-              {week.end.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}
-            </p>
-          </div>
+              <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToday}
+                    className="h-10 text-xs sm:h-8"
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setAnchorDate((value) => navigateAnchor(activeView, value, -1))}
+                    aria-label={`Previous ${activeView}`}
+                    title={`Previous ${activeView}`}
+                    className="h-10 w-10 sm:h-8 sm:w-8"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setAnchorDate((value) => navigateAnchor(activeView, value, 1))}
+                    aria-label={`Next ${activeView}`}
+                    title={`Next ${activeView}`}
+                    className="h-10 w-10 sm:h-8 sm:w-8"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
 
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                refreshEvents.mutate({
-                  weekStart: week.start.toISOString(),
-                  weekEnd: week.end.toISOString(),
-                })
-              }
-              disabled={refreshEvents.isPending}
-            >
-              <RefreshCw
-                className={cn(
-                  "h-3.5 w-3.5",
-                  refreshEvents.isPending && "animate-spin",
-                )}
-              />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setCreateOpen(true)}
+                  className="h-10 text-xs sm:h-8"
+                >
+                  <CalendarPlus className="h-3.5 w-3.5" />
+                  <span>Create</span>
+                </Button>
+              </div>
+            </div>
 
-              <span className="hidden sm:inline">
-                {refreshEvents.isPending ? "Refreshing" : "Refresh"}
-              </span>
-            </Button>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+                <span className="text-muted-foreground mr-1 shrink-0 text-[11px] font-medium uppercase tracking-wide">
+                  View
+                </span>
+                {viewButtons.map(({ id, label, icon: Icon }) => (
+                  <Button
+                    key={id}
+                    type="button"
+                    variant={activeView === id ? "secondary" : "ghost"}
+                    size="sm"
+                    aria-current={activeView === id ? "page" : undefined}
+                    onClick={() => setActiveView(id)}
+                    className="h-9 shrink-0 gap-1.5 text-xs sm:h-7"
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </Button>
+                ))}
+              </div>
 
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-              <CalendarPlus className="h-3.5 w-3.5" />
-              Create
-            </Button>
+              <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
+                <span className="text-muted-foreground hidden text-xs md:inline">
+                  {eventsData.length} event{eventsData.length === 1 ? "" : "s"} in view
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    refreshEvents.mutate({
+                      start: range.start.toISOString(),
+                      end: range.end.toISOString(),
+                      timeZone,
+                    })
+                  }
+                  disabled={refreshEvents.isPending}
+                  className="h-9 text-xs sm:h-7"
+                >
+                  <RefreshCw
+                    className={cn(
+                      "h-3.5 w-3.5",
+                      refreshEvents.isPending && "animate-spin",
+                    )}
+                  />
+                  <span>{refreshEvents.isPending ? "Refreshing" : "Refresh"}</span>
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -297,7 +530,6 @@ export function CalendarPanel({
             {refreshEvents.error && (
               <p className="text-destructive">{refreshEvents.error.message}</p>
             )}
-
             {refreshEvents.data && (
               <p className="text-muted-foreground">
                 {refreshEvents.data.synced} synced from Google Calendar
@@ -306,30 +538,27 @@ export function CalendarPanel({
           </div>
         )}
 
-        <div className="border-b px-4 py-3">
+        <div className="shrink-0 border-b px-3 py-3 sm:px-4">
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setActiveSearch(search);
+            onSubmit={(event) => {
+              event.preventDefault();
+              setActiveSearch(search.trim());
             }}
-            className="flex max-w-xl items-center gap-2"
+            className="mx-auto flex w-full max-w-6xl flex-col gap-2 sm:flex-row"
           >
             <div className="relative min-w-0 flex-1">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
-
               <Input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search events"
                 className="pl-8"
               />
             </div>
-
-            <Button type="submit" variant="outline">
+            <Button type="submit" variant="outline" className="h-10 sm:h-8">
               Search
             </Button>
-
             {activeSearch && (
               <Button
                 type="button"
@@ -338,6 +567,7 @@ export function CalendarPanel({
                   setSearch("");
                   setActiveSearch("");
                 }}
+                className="h-10 w-full sm:h-8 sm:w-auto"
               >
                 Clear
               </Button>
@@ -345,125 +575,115 @@ export function CalendarPanel({
           </form>
         </div>
 
-        <section className="bg-muted/20 min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {events.isLoading && <StatusLine>Loading events...</StatusLine>}
+        <section className="bg-muted/20 min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
+          <div className="mx-auto max-w-6xl">
+            {events.isLoading && <CalendarViewLoading />}
+            {events.error && <CalendarViewError>{events.error.message}</CalendarViewError>}
 
-          {events.error && (
-            <StatusLine tone="error">{events.error.message}</StatusLine>
-          )}
-
-          {events.data && (
-            <>
-              {events.data.length === 0 ? (
-                <div className="bg-background rounded-lg border border-dashed py-14 text-center">
-                  <p className="text-sm font-medium">No events this week</p>
-
-                  <p className="text-muted-foreground mt-1 text-sm">
-                    Your agenda is clear in this view.
-                  </p>
-                </div>
-              ) : (
-                <div className="mx-auto flex max-w-5xl flex-col gap-5">
-                  {groupedEvents.map((group) => (
-                    <section
-                      key={group.key}
-                      className="grid gap-3 md:grid-cols-[180px_1fr]"
-                    >
-                      <div>
-                        <h3 className="font-heading text-sm font-semibold">
-                          {group.label}
-                        </h3>
-
-                        <p className="text-muted-foreground text-xs">
-                          {group.events.length} event
-                          {group.events.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-
-                      <ul className="flex flex-col gap-2">
-                        {group.events.map((event) => (
-                          <EventRow
-                            key={event.id}
-                            event={event}
-                            onEdit={() => openEditEvent(event)}
-                            onEmailAttendees={() => onEmailAttendees(event)}
-                          />
-                        ))}
-                      </ul>
-                    </section>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
+            {!events.isLoading && !events.error && (
+              <>
+                {activeView === "month" && (
+                  <MonthView
+                    anchorDate={anchorDate}
+                    events={eventsData}
+                    onOpenEvent={handleOpenEvent}
+                    onSelectDate={handleSelectDate}
+                  />
+                )}
+                {activeView === "week" && (
+                  <WeekView
+                    anchorDate={anchorDate}
+                    events={eventsData}
+                    onOpenEvent={handleOpenEvent}
+                    onSelectTime={handleSelectTime}
+                    onMoveEvent={handleMoveEvent}
+                  />
+                )}
+                {activeView === "day" && (
+                  <DayView
+                    anchorDate={anchorDate}
+                    events={eventsData}
+                    onOpenEvent={handleOpenEvent}
+                    onSelectTime={handleSelectTime}
+                    onMoveEvent={handleMoveEvent}
+                  />
+                )}
+                {activeView === "agenda" && (
+                  showEmpty ? (
+                    <CalendarViewEmpty onCreate={() => setCreateOpen(true)} />
+                  ) : (
+                    <AgendaView
+                      startDate={range.start}
+                      events={eventsData}
+                      onOpenEvent={handleOpenEvent}
+                      onEmailAttendees={(event) =>
+                        onEmailAttendees(normalizedToLegacyEvent(event))
+                      }
+                    />
+                  )
+                )}
+              </>
+            )}
+          </div>
         </section>
       </div>
 
-      {/* Create Event */}
       <Sheet open={createOpen} onOpenChange={setCreateOpen}>
         <SheetContent className="w-full sm:max-w-xl">
           <SheetHeader className="border-b">
             <SheetTitle>Create event</SheetTitle>
           </SheetHeader>
-
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4">
             <Input
               type="text"
               value={summary}
-              onChange={(e) => setSummary(e.target.value)}
+              onChange={(event) => setSummary(event.target.value)}
               placeholder="Title"
               autoFocus
             />
-
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(event) => setDescription(event.target.value)}
               placeholder="Description"
               rows={4}
               className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
             />
-
             <Input
               type="text"
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(event) => setLocation(event.target.value)}
               placeholder="Location"
             />
-
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 Start
                 <Input
                   type="datetime-local"
                   value={start}
-                  onChange={(e) => setStart(e.target.value)}
+                  onChange={(event) => setStart(event.target.value)}
                 />
               </label>
-
               <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 End
                 <Input
                   type="datetime-local"
                   value={end}
-                  onChange={(e) => setEnd(e.target.value)}
+                  onChange={(event) => setEnd(event.target.value)}
                 />
               </label>
             </div>
-
             <Input
               type="text"
               value={attendees}
-              onChange={(e) => setAttendees(e.target.value)}
+              onChange={(event) => setAttendees(event.target.value)}
               placeholder="Attendees (comma-separated)"
             />
-
             {(createDraft.error ?? sendInvite.error) && (
               <p className="text-destructive text-sm">
                 {(createDraft.error ?? sendInvite.error)?.message}
               </p>
             )}
           </div>
-
           <SheetFooter className="border-t sm:flex-row sm:justify-between">
             <Button
               type="button"
@@ -473,7 +693,6 @@ export function CalendarPanel({
             >
               {createDraft.isPending ? "Saving" : "Save draft"}
             </Button>
-
             <Button
               type="button"
               onClick={() => sendInvite.mutate(eventInput)}
@@ -491,94 +710,95 @@ export function CalendarPanel({
         </SheetContent>
       </Sheet>
 
-      {/* Edit Event */}
       <Sheet open={editOpen} onOpenChange={setEditOpen}>
         <SheetContent className="w-full sm:max-w-xl">
           <SheetHeader className="border-b">
             <SheetTitle>Edit event</SheetTitle>
           </SheetHeader>
-
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4">
             <Input
               type="text"
               value={summary}
-              onChange={(e) => setSummary(e.target.value)}
+              onChange={(event) => setSummary(event.target.value)}
               placeholder="Title"
               autoFocus
             />
-
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(event) => setDescription(event.target.value)}
               placeholder="Description"
               rows={4}
               className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
             />
-
             <Input
               type="text"
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(event) => setLocation(event.target.value)}
               placeholder="Location"
             />
-
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 Start
                 <Input
                   type="datetime-local"
                   value={start}
-                  onChange={(e) => setStart(e.target.value)}
+                  onChange={(event) => setStart(event.target.value)}
                 />
               </label>
-
               <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
                 End
                 <Input
                   type="datetime-local"
                   value={end}
-                  onChange={(e) => setEnd(e.target.value)}
+                  onChange={(event) => setEnd(event.target.value)}
                 />
               </label>
             </div>
-
             <Input
               type="text"
               value={attendees}
-              onChange={(e) => setAttendees(e.target.value)}
+              onChange={(event) => setAttendees(event.target.value)}
               placeholder="Attendees (comma-separated)"
             />
-
             {(updateEvent.error ?? deleteEvent.error) && (
               <p className="text-destructive text-sm">
                 {(updateEvent.error ?? deleteEvent.error)?.message}
               </p>
             )}
           </div>
-
           <SheetFooter className="border-t sm:flex-row sm:justify-between">
             <Button
               type="button"
               variant="destructive"
               onClick={() => {
                 if (!selectedEvent) return;
-
                 const confirmed = window.confirm(
                   "Delete this event? Attendees will be notified.",
                 );
-
                 if (!confirmed) return;
-
-                deleteEvent.mutate({
-                  id: selectedEvent.id,
-                });
+                deleteEvent.mutate({ id: selectedEvent.id });
               }}
               disabled={deleteEvent.isPending || updateEvent.isPending}
             >
               {deleteEvent.isPending ? "Deleting" : "Delete event"}
             </Button>
-
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              {selectedEvent?.attendees.length ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (!selectedEvent) return;
+                    onEmailAttendees(selectedEvent);
+                    setEditOpen(false);
+                    setSelectedEvent(null);
+                  }}
+                  disabled={updateEvent.isPending || deleteEvent.isPending}
+                >
+                  <Mail className="h-4 w-4" />
+                  Email attendees
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -587,16 +807,11 @@ export function CalendarPanel({
               >
                 Cancel
               </Button>
-
               <Button
                 type="button"
                 onClick={() => {
                   if (!selectedEvent) return;
-
-                  updateEvent.mutate({
-                    id: selectedEvent.id,
-                    ...eventInput,
-                  });
+                  updateEvent.mutate({ id: selectedEvent.id, ...eventInput });
                 }}
                 disabled={
                   updateEvent.isPending ||
@@ -617,105 +832,3 @@ export function CalendarPanel({
   );
 }
 
-function EventRow({
-  event,
-  onEdit,
-  onEmailAttendees,
-}: {
-  event: CalendarEvent;
-  onEdit: () => void;
-  onEmailAttendees: () => void;
-}) {
-  return (
-    <li className="group bg-background hover:bg-card rounded-lg border p-4 transition-colors">
-      <div className="flex gap-3">
-        <div className="bg-primary/70 mt-1 h-10 w-1 shrink-0 rounded-full" />
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <button
-              type="button"
-              onClick={onEdit}
-              className="hover:text-primary min-w-0 truncate text-left text-sm font-semibold"
-            >
-              {event.summary || "Untitled"}
-            </button>
-
-            {event.start && (
-              <span className="text-muted-foreground text-xs font-medium">
-                {formatEventWhen(event.start, event.end)}
-              </span>
-            )}
-          </div>
-
-          {event.location && (
-            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
-              <MapPin className="h-3.5 w-3.5" />
-              {event.location}
-            </p>
-          )}
-
-          {event.description && (
-            <p className="text-muted-foreground mt-2 line-clamp-3 text-sm leading-6 whitespace-pre-wrap">
-              <LinkifiedText text={event.description} />
-            </p>
-          )}
-
-          {event.attendees.length > 0 && (
-            <p className="text-muted-foreground mt-3 flex items-start gap-1.5 text-xs">
-              <Users className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{formatAttendees(event.attendees)}</span>
-            </p>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {event.attendees.length > 0 && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onEmailAttendees}
-              aria-label="Email attendees"
-              title="Email attendees"
-              className="opacity-70 transition-opacity group-hover:opacity-100"
-            >
-              <Mail className="h-4 w-4" />
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onEdit}
-            aria-label="Edit event"
-            title="Edit event"
-            className="opacity-70 transition-opacity group-hover:opacity-100"
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function StatusLine({
-  children,
-  tone = "muted",
-}: {
-  children: React.ReactNode;
-  tone?: "muted" | "error";
-}) {
-  return (
-    <p
-      className={cn(
-        "px-4 py-4 text-sm",
-        tone === "error" ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      {children}
-    </p>
-  );
-}

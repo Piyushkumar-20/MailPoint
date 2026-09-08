@@ -94,6 +94,7 @@ export function AccountMenu({
   onAdmin,
   isAdmin,
   align = "end",
+  triggerId,
   children,
 }: {
   user: SidebarUser | null;
@@ -103,11 +104,12 @@ export function AccountMenu({
   onAdmin: () => void;
   isAdmin: boolean;
   align?: "start" | "end";
+  triggerId?: string;
   children: React.ReactElement;
 }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={children} />
+      <DropdownMenuTrigger id={triggerId} render={children} />
       <DropdownMenuContent align={align} className="w-56">
         <div className="px-2 py-1.5">
           <p className="text-foreground truncate text-sm font-medium">
@@ -307,6 +309,7 @@ function SidebarBody({
           onAdmin={onAdmin}
           isAdmin={isAdmin}
           align="start"
+          triggerId="sidebar-account-menu-trigger"
         >
           <button
             type="button"

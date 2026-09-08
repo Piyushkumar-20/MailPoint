@@ -52,6 +52,7 @@ export const corsair = createCorsair({
         overrides: {
           "events.create": "allow",
           "events.delete": "allow",
+          "events.update": "allow",
         },
       },
     }),
