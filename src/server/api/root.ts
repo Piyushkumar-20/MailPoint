@@ -3,6 +3,7 @@ import { billingRouter } from "@/server/api/routers/billing";
 import { adminRouter } from "@/server/api/routers/admin";
 import { gmailRouter } from "@/server/api/routers/gmail";
 import { intelligenceRouter } from "@/server/api/routers/intelligence";
+import { integrationsRouter } from "@/server/api/routers/integrations";
 import { postRouter } from "@/server/api/routers/post";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
@@ -18,6 +19,7 @@ export const appRouter = createTRPCRouter({
   billing: billingRouter,
   admin: adminRouter,
   intelligence: intelligenceRouter,
+  integrations: integrationsRouter,
 });
 
 // export type definition of API

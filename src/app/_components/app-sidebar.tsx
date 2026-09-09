@@ -71,7 +71,6 @@ const CALENDAR_ITEMS: NavItem[] = [
 ];
 
 const SETTINGS_ITEMS: NavItem[] = [
-  { section: "settings", label: "Account", icon: Settings },
   { section: "integrations", label: "Integrations", icon: Mail },
 ];
 

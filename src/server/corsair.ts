@@ -17,18 +17,6 @@ const gmailPlugin = gmail({
   },
 });
 
-// Ensure full Gmail scope (https://mail.google.com/) is requested for permanent deletion
-// while preserving all existing scopes
-if (
-  gmailPlugin.oauthConfig?.scopes &&
-  !gmailPlugin.oauthConfig.scopes.includes("https://mail.google.com/")
-) {
-  gmailPlugin.oauthConfig.scopes = [
-    ...gmailPlugin.oauthConfig.scopes,
-    "https://mail.google.com/",
-  ];
-}
-
 export const corsair = createCorsair({
   kek: process.env.CORSAIR_KEK!,
   database: conn,
@@ -36,8 +24,8 @@ export const corsair = createCorsair({
   hub: {
     // projectApiKey: process.env.CORSAIR_DEV_API_KEY!,
     // signingSecret: process.env.CORSAIR_DEV_SIGNING_SECRET!,
-    projectApiKey: process.env.CORSAIR_PROD_API_KEY!,
-    signingSecret: process.env.CORSAIR_PROD_SIGNING_SECRET!,
+       projectApiKey: process.env.CORSAIR_PROD_API_KEY!,
+signingSecret: process.env.CORSAIR_PROD_SIGNING_SECRET!,
     allowWorkflowExecution: true,
   },
 
