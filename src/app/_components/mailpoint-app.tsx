@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bot,
   CalendarDays,
-  Command,
   Home,
   Inbox,
   PenSquare,
@@ -27,9 +26,7 @@ import {
 import { DashboardOverview } from "@/app/_components/dashboard-overview";
 import { GmailPanel } from "@/app/_components/gmail-panel";
 import { IntegrationsPanel } from "@/app/_components/integrations-panel";
-import { CommandPalette } from "@/components/command-palette";
 import { MobileQuickActions } from "@/components/mobile-quick-actions";
-import { ShortcutsHelpDialog } from "@/components/shortcuts-help-dialog";
 import { ActionProvider, useActions } from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/trpc/react";
@@ -47,7 +44,6 @@ const SECTION_PATHS: Record<AppSection, string> = {
   settings: "/settings",
   integrations: "/settings/integrations",
 };
-
 
 function MailPointAppInner({
   initialSection = "overview",
@@ -100,7 +96,6 @@ function MailPointAppInner({
   >("all");
 
   // Calendar creation is kept as a small shell-level signal so global
-  // command-palette actions can open the Calendar composer.
   const [focusCreateSignal, setFocusCreateSignal] = useState(0);
   const [calendarTodaySignal, setCalendarTodaySignal] = useState(0);
 
@@ -197,18 +192,16 @@ function MailPointAppInner({
     [router],
   );
 
-  const { registerActions, openCommandPalette, openShortcutsHelp } =
-    useActions();
+  const { registerActions } = useActions();
 
-  // Register Global Navigation, Calendar, AI, and System Actions
-  useEffect(() => {
-    const unregister = registerActions([
+  const globalActions = useMemo(
+    () => [
       // Navigation Actions
       {
         id: "nav.inbox",
         label: "Go to Inbox",
         description: "View incoming mail",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Inbox,
         priority: 90,
         execute: () => handleNavigate("inbox"),
@@ -217,7 +210,7 @@ function MailPointAppInner({
         id: "nav.starred",
         label: "Go to Starred",
         description: "View starred messages",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Star,
         priority: 85,
         execute: () => handleNavigate("starred"),
@@ -226,7 +219,7 @@ function MailPointAppInner({
         id: "nav.sent",
         label: "Go to Sent",
         description: "View sent messages",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Send,
         priority: 80,
         execute: () => handleNavigate("sent"),
@@ -235,7 +228,7 @@ function MailPointAppInner({
         id: "nav.drafts",
         label: "Go to Drafts",
         description: "View draft emails",
-        category: "navigation",
+        category: "navigation" as const,
         icon: PenSquare,
         priority: 75,
         execute: () => handleNavigate("drafts"),
@@ -244,7 +237,7 @@ function MailPointAppInner({
         id: "nav.trash",
         label: "Go to Trash",
         description: "View deleted messages",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Trash2,
         priority: 70,
         execute: () => handleNavigate("trash"),
@@ -253,7 +246,7 @@ function MailPointAppInner({
         id: "nav.calendar",
         label: "Go to Calendar",
         description: "Open schedule and meetings",
-        category: "navigation",
+        category: "navigation" as const,
         icon: CalendarDays,
         priority: 88,
         execute: () => handleNavigate("calendar"),
@@ -262,7 +255,7 @@ function MailPointAppInner({
         id: "nav.agent",
         label: "Open MailPoint AI",
         description: "Chat with AI email assistant",
-        category: "ai",
+        category: "ai" as const,
         icon: Bot,
         priority: 95,
         mobileVisible: true,
@@ -272,7 +265,7 @@ function MailPointAppInner({
         id: "nav.overview",
         label: "Go to Dashboard Overview",
         description: "Overview metrics and shortcuts",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Home,
         priority: 60,
         execute: () => handleNavigate("overview"),
@@ -281,7 +274,7 @@ function MailPointAppInner({
         id: "nav.settings",
         label: "Account Settings",
         description: "Manage account and profile",
-        category: "navigation",
+        category: "navigation" as const,
         icon: Settings,
         priority: 50,
         execute: () => handleNavigate("settings"),
@@ -292,7 +285,7 @@ function MailPointAppInner({
         id: "calendar.createEvent",
         label: "Create Calendar Event",
         description: "Schedule a new event or meeting",
-        category: "calendar",
+        category: "calendar" as const,
         icon: CalendarDays,
         shortcut: {
           key: "c",
@@ -313,7 +306,7 @@ function MailPointAppInner({
         id: "calendar.today",
         label: "Today's Schedule",
         description: "Jump to current week",
-        category: "calendar",
+        category: "calendar" as const,
         isAvailable: () => activeSection === "calendar",
         execute: () => {
           if (activeSection !== "calendar") {
@@ -329,7 +322,7 @@ function MailPointAppInner({
         id: "ai.ask",
         label: "Ask MailPoint AI",
         description: "Prompt the AI assistant to help you",
-        category: "ai",
+        category: "ai" as const,
         icon: Sparkles,
         priority: 96,
         mobileVisible: true,
@@ -345,7 +338,7 @@ function MailPointAppInner({
         id: "mail.search",
         label: "Search Mail",
         description: "Search keywords, senders, or topics",
-        category: "mail",
+        category: "mail" as const,
         icon: Search,
         shortcut: {
           key: "/",
@@ -373,37 +366,17 @@ function MailPointAppInner({
             if (input) {
               input.focus();
               input.select();
-            } else {
-              openCommandPalette();
             }
           }, 60);
         },
       },
+    ],
+    [activeSection, handleNavigate],
+  );
 
-      // Help & System
-      {
-        id: "help.shortcuts",
-        label: "Productivity & Shortcuts Help",
-        description: "View keyboard shortcuts and touch guide",
-        category: "system",
-        icon: Command,
-        shortcut: {
-          key: "?",
-          display: "?",
-        },
-        priority: 40,
-        execute: () => openShortcutsHelp(),
-      },
-    ]);
-
-    return unregister;
-  }, [
-    registerActions,
-    activeSection,
-    handleNavigate,
-    openCommandPalette,
-    openShortcutsHelp,
-  ]);
+  useEffect(() => {
+    return registerActions(globalActions);
+  }, [registerActions, globalActions]);
 
   return (
     <div className="bg-background text-foreground flex h-screen">
@@ -494,16 +467,13 @@ function MailPointAppInner({
             />
           )}
 
-
-          {(activeSection === "settings" || activeSection === "integrations") && (
+          {(activeSection === "settings" ||
+            activeSection === "integrations") && (
             <IntegrationsPanel user={user} />
           )}
         </main>
       </div>
-
-      <CommandPalette />
       <MobileQuickActions />
-      <ShortcutsHelpDialog />
     </div>
   );
 }

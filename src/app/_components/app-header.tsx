@@ -1,8 +1,7 @@
 "use client";
 
-import { Command, HelpCircle, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 
-import { useActions } from "@/lib/actions/action-context";
 import {
   AccountMenu,
   type SidebarUser,
@@ -79,8 +78,6 @@ export function AppHeader({
     section === "sent" ||
     section === "trash";
 
-  const { openCommandPalette, openShortcutsHelp } = useActions();
-
   return (
     <header className="bg-background/95 flex h-14 shrink-0 items-center gap-3 border-b px-3 md:px-4">
       <button
@@ -122,46 +119,6 @@ export function AppHeader({
           />
         </div>
       )}
-
-      {/* Command Palette Trigger (Desktop) */}
-      <button
-        type="button"
-        onClick={openCommandPalette}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground border-border/60 bg-muted/30 hover:border-border hidden h-8 items-center gap-2 rounded-md border px-2.5 text-xs shadow-2xs transition-colors md:flex"
-        aria-label="Open commands (⌘K)"
-        title="Open commands (⌘K)"
-      >
-        <Command className="h-3.5 w-3.5" />
-
-        <span className="text-muted-foreground">Commands</span>
-
-        <kbd className="bg-background text-muted-foreground rounded border px-1 font-mono text-[10px]">
-          ⌘K
-        </kbd>
-      </button>
-
-      {/* Command Palette Trigger (Mobile/Tablet) */}
-      <button
-        type="button"
-        onClick={openCommandPalette}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md md:hidden"
-        aria-label="Open commands"
-        title="Commands"
-      >
-        <Command className="h-4 w-4" />
-      </button>
-
-      {/* Shortcuts & Productivity Help Trigger */}
-      <button
-        type="button"
-        onClick={openShortcutsHelp}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md"
-        aria-label="Keyboard shortcuts and productivity"
-        title="Productivity Help (?)"
-      >
-        <HelpCircle className="h-4 w-4" />
-      </button>
-
       <ModeToggle />
 
       <AccountMenu
