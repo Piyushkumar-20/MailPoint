@@ -1,20 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bot,
-  CalendarDays,
-  Home,
-  Inbox,
-  PenSquare,
-  Search,
-  Send,
-  Settings,
-  Sparkles,
-  Star,
-  Trash2,
-} from "lucide-react";
 
 import { AppSidebar, type AppSection } from "@/app/_components/app-sidebar";
 import { AppHeader } from "@/app/_components/app-header";
@@ -27,7 +14,7 @@ import { DashboardOverview } from "@/app/_components/dashboard-overview";
 import { GmailPanel } from "@/app/_components/gmail-panel";
 import { IntegrationsPanel } from "@/app/_components/integrations-panel";
 import { MobileQuickActions } from "@/components/mobile-quick-actions";
-import { ActionProvider, useActions } from "@/lib/actions/action-context";
+import { ActionProvider} from "@/lib/actions/action-context";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -96,8 +83,8 @@ function MailPointAppInner({
   >("all");
 
   // Calendar creation is kept as a small shell-level signal so global
-  const [focusCreateSignal, setFocusCreateSignal] = useState(0);
-  const [calendarTodaySignal, setCalendarTodaySignal] = useState(0);
+  const [focusCreateSignal ] = useState(0);
+  const [calendarTodaySignal ] = useState(0);
 
   const [calendarComposeRequest, setCalendarComposeRequest] = useState<{
     to: string;
@@ -191,192 +178,6 @@ function MailPointAppInner({
     },
     [router],
   );
-
-  const { registerActions } = useActions();
-
-  const globalActions = useMemo(
-    () => [
-      // Navigation Actions
-      {
-        id: "nav.inbox",
-        label: "Go to Inbox",
-        description: "View incoming mail",
-        category: "navigation" as const,
-        icon: Inbox,
-        priority: 90,
-        execute: () => handleNavigate("inbox"),
-      },
-      {
-        id: "nav.starred",
-        label: "Go to Starred",
-        description: "View starred messages",
-        category: "navigation" as const,
-        icon: Star,
-        priority: 85,
-        execute: () => handleNavigate("starred"),
-      },
-      {
-        id: "nav.sent",
-        label: "Go to Sent",
-        description: "View sent messages",
-        category: "navigation" as const,
-        icon: Send,
-        priority: 80,
-        execute: () => handleNavigate("sent"),
-      },
-      {
-        id: "nav.drafts",
-        label: "Go to Drafts",
-        description: "View draft emails",
-        category: "navigation" as const,
-        icon: PenSquare,
-        priority: 75,
-        execute: () => handleNavigate("drafts"),
-      },
-      {
-        id: "nav.trash",
-        label: "Go to Trash",
-        description: "View deleted messages",
-        category: "navigation" as const,
-        icon: Trash2,
-        priority: 70,
-        execute: () => handleNavigate("trash"),
-      },
-      {
-        id: "nav.calendar",
-        label: "Go to Calendar",
-        description: "Open schedule and meetings",
-        category: "navigation" as const,
-        icon: CalendarDays,
-        priority: 88,
-        execute: () => handleNavigate("calendar"),
-      },
-      {
-        id: "nav.agent",
-        label: "Open MailPoint AI",
-        description: "Chat with AI email assistant",
-        category: "ai" as const,
-        icon: Bot,
-        priority: 95,
-        mobileVisible: true,
-        execute: () => handleNavigate("agent"),
-      },
-      {
-        id: "nav.overview",
-        label: "Go to Dashboard Overview",
-        description: "Overview metrics and shortcuts",
-        category: "navigation" as const,
-        icon: Home,
-        priority: 60,
-        execute: () => handleNavigate("overview"),
-      },
-      {
-        id: "nav.settings",
-        label: "Account Settings",
-        description: "Manage account and profile",
-        category: "navigation" as const,
-        icon: Settings,
-        priority: 50,
-        execute: () => handleNavigate("settings"),
-      },
-
-      // Calendar Actions
-      {
-        id: "calendar.createEvent",
-        label: "Create Calendar Event",
-        description: "Schedule a new event or meeting",
-        category: "calendar" as const,
-        icon: CalendarDays,
-        shortcut: {
-          key: "c",
-          shift: true,
-          display: "Shift+C",
-        },
-        priority: 92,
-        mobileVisible: true,
-        execute: () => {
-          if (activeSection !== "calendar") {
-            handleNavigate("calendar");
-          }
-
-          setFocusCreateSignal((n) => n + 1);
-        },
-      },
-      {
-        id: "calendar.today",
-        label: "Today's Schedule",
-        description: "Jump to current week",
-        category: "calendar" as const,
-        isAvailable: () => activeSection === "calendar",
-        execute: () => {
-          if (activeSection !== "calendar") {
-            handleNavigate("calendar");
-          }
-
-          setCalendarTodaySignal((n) => n + 1);
-        },
-      },
-
-      // AI Actions
-      {
-        id: "ai.ask",
-        label: "Ask MailPoint AI",
-        description: "Prompt the AI assistant to help you",
-        category: "ai" as const,
-        icon: Sparkles,
-        priority: 96,
-        mobileVisible: true,
-        execute: () => {
-          if (activeSection !== "agent") {
-            handleNavigate("agent");
-          }
-        },
-      },
-
-      // Search Action
-      {
-        id: "mail.search",
-        label: "Search Mail",
-        description: "Search keywords, senders, or topics",
-        category: "mail" as const,
-        icon: Search,
-        shortcut: {
-          key: "/",
-          ctrlOrCmd: true,
-          display: "⌘/",
-        },
-        priority: 85,
-        mobileVisible: true,
-        execute: () => {
-          const isMailSec =
-            activeSection === "inbox" ||
-            activeSection === "starred" ||
-            activeSection === "sent" ||
-            activeSection === "trash";
-
-          if (!isMailSec) {
-            handleNavigate("inbox");
-          }
-
-          setTimeout(() => {
-            const input = document.getElementById(
-              "mail-search-input",
-            ) as HTMLInputElement | null;
-
-            if (input) {
-              input.focus();
-              input.select();
-            }
-          }, 60);
-        },
-      },
-    ],
-    [activeSection, handleNavigate],
-  );
-
-  useEffect(() => {
-    return registerActions(globalActions);
-  }, [registerActions, globalActions]);
 
   return (
     <div className="bg-background text-foreground flex h-screen">
