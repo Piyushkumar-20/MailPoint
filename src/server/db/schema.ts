@@ -266,6 +266,140 @@ export const emailEmbeddings = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Gmail sync index
+// ---------------------------------------------------------------------------
+
+export const gmailSyncStatusEnum = pgEnum("gmail_sync_status", [
+  "initial_sync_required",
+  "syncing",
+  "synced",
+  "sync_error",
+  "full_sync_required",
+]);
+
+export const gmailMessages = pgTable(
+  "gmail_messages",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade" }),
+
+    // --- Gmail identity ---
+    messageId: text("message_id").notNull(),
+    threadId: text("thread_id").notNull().default(""),
+    historyId: text("history_id"),
+
+    // --- List metadata (always populated) ---
+    fromAddress: text("from_address").notNull().default(""),
+    toAddress: text("to_address").notNull().default(""),
+    ccAddress: text("cc_address").notNull().default(""),
+    subject: text("subject").notNull().default(""),
+    snippet: text("snippet").notNull().default(""),
+    /** Gmail epoch milliseconds as text (matches Gmail API internalDate type) */
+    internalDate: text("internal_date"),
+    labelIds: jsonb("label_ids").notNull().default([]),
+
+    // --- Derived boolean flags for fast single-query mailbox filtering ---
+    isUnread: boolean("is_unread").notNull().default(false),
+    isStarred: boolean("is_starred").notNull().default(false),
+    isInbox: boolean("is_inbox").notNull().default(false),
+    isSent: boolean("is_sent").notNull().default(false),
+    isTrash: boolean("is_trash").notNull().default(false),
+    isDraft: boolean("is_draft").notNull().default(false),
+
+    // --- Message body (lazy – only set when user opens message) ---
+    bodyStored: boolean("body_stored").notNull().default(false),
+    body: text("body"),
+    bodyMimeType: text("body_mime_type"),
+
+    // --- Sync bookkeeping ---
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // Primary de-dupe / upsert key
+    unique("gmail_messages_tenant_message_unique").on(
+      table.tenantId,
+      table.messageId,
+    ),
+    // Core inbox query: tenant + label flag + date descending
+    index("gmail_messages_tenant_inbox_date_idx").on(
+      table.tenantId,
+      table.isInbox,
+      table.internalDate,
+    ),
+    index("gmail_messages_tenant_starred_date_idx").on(
+      table.tenantId,
+      table.isStarred,
+      table.internalDate,
+    ),
+    index("gmail_messages_tenant_sent_date_idx").on(
+      table.tenantId,
+      table.isSent,
+      table.internalDate,
+    ),
+    index("gmail_messages_tenant_trash_date_idx").on(
+      table.tenantId,
+      table.isTrash,
+      table.internalDate,
+    ),
+    // Thread grouping
+    index("gmail_messages_tenant_thread_idx").on(
+      table.tenantId,
+      table.threadId,
+    ),
+    // messageId lookup (e.g. getMessage, post-mutation update)
+    index("gmail_messages_tenant_messageid_idx").on(
+      table.tenantId,
+      table.messageId,
+    ),
+  ],
+);
+
+/**
+ * Per-tenant Gmail synchronisation state.
+ * Tracks the Gmail historyId and overall sync health so the service can
+ * choose between full vs. incremental sync on the next run.
+ */
+export const gmailSyncState = pgTable(
+  "gmail_sync_state",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade" })
+      .unique(),
+    /** Latest Gmail historyId seen during a successful sync. */
+    historyId: text("history_id"),
+    status: gmailSyncStatusEnum("status")
+      .notNull()
+      .default("initial_sync_required"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    initialSyncCompletedAt: timestamp("initial_sync_completed_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("gmail_sync_state_tenant_idx").on(table.tenantId)],
+);
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
 export const planKeyEnum = pgEnum("plan_key", ["free", "pro"]);
 
 export const billingIntervalEnum = pgEnum("billing_interval", [

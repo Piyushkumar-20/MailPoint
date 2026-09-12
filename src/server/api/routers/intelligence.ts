@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { getTenant, getTenantId } from "@/server/lib/tenant";
+import { getTenantId } from "@/server/lib/tenant";
 import {
   getExistingClassifications,
   getOrClassifyEmails,
@@ -15,9 +15,9 @@ import {
   getOrGenerateEmbeddings,
   type CandidateEmail,
 } from "@/server/lib/email-search";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { emailClassifications } from "@/server/db/schema";
-import { getHeader } from "@/server/lib/email";
+import { emailClassifications, gmailMessages } from "@/server/db/schema";
 
 const emailMetadataSchema = z.object({
   id: z.string().min(1),
@@ -249,97 +249,35 @@ export const intelligenceRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const tenantId = await getTenantId(ctx.session.user.id);
-      const tenant = await getTenant(ctx.session.user.id);
 
-      const labelIds = {
-        inbox: ["INBOX"],
-        starred: ["STARRED"],
-        sent: ["SENT"],
-        trash: ["TRASH"],
-      }[input.mailbox];
+      // 1. Gather candidates from local MailPoint gmail_messages read model
+      const labelFilter =
+        input.mailbox === "inbox"
+          ? eq(gmailMessages.isInbox, true)
+          : input.mailbox === "starred"
+            ? eq(gmailMessages.isStarred, true)
+            : input.mailbox === "sent"
+              ? eq(gmailMessages.isSent, true)
+              : eq(gmailMessages.isTrash, true);
 
-      // 1. Gather candidates from local Corsair DB first
-      const candidates: CandidateEmail[] = [];
+      const rows = await db.query.gmailMessages.findMany({
+        where: and(eq(gmailMessages.tenantId, tenantId), labelFilter),
+        orderBy: [desc(gmailMessages.internalDate)],
+        limit: 100,
+      });
 
-      try {
-        const cachedList = await tenant.gmail.db.messages.list({ limit: 100 });
-        for (const item of cachedList) {
-          const d = item.data as {
-            subject?: string;
-            from?: string;
-            to?: string;
-            snippet?: string;
-            body?: string;
-            internalDate?: string | null;
-            threadId?: string;
-            labelIds?: string[];
-            payload?: { headers?: Array<{ name?: string; value?: string }> };
-          };
-
-          const cacheHeaders = d.payload?.headers;
-          const subject = d.subject ?? getHeader(cacheHeaders, "Subject") ?? "";
-          const from = d.from ?? getHeader(cacheHeaders, "From") ?? "";
-          const to = d.to ?? getHeader(cacheHeaders, "To") ?? "";
-          const labels = Array.isArray(d.labelIds) ? d.labelIds : [];
-
-          candidates.push({
-            id: item.entity_id,
-            threadId: d.threadId ?? "",
-            subject,
-            from,
-            to,
-            snippet: d.snippet ?? "",
-            body: d.body ?? "",
-            date: d.internalDate ?? null,
-            timestamp: messageTimestamp(d.internalDate ?? null),
-            labelIds: labels,
-          });
-        }
-      } catch (err) {
-        console.warn("Failed to load local cached messages, fetching from API:", err);
-      }
-
-      // If local cache is empty, fetch recent messages from Gmail API to populate
-      if (candidates.length === 0) {
-        try {
-          const apiResult = await tenant.gmail.api.messages.list({
-            maxResults: 50,
-            labelIds,
-            includeSpamTrash: input.mailbox === "trash" ? true : undefined,
-          });
-
-          const msgIds = (apiResult.messages ?? []).map((m) => m.id).filter(Boolean);
-
-          const fetched = await Promise.all(
-            msgIds.slice(0, 30).map(async (id) => {
-              if (!id) return null;
-              try {
-                const msg = await tenant.gmail.api.messages.get({ id, format: "metadata" });
-                const headers = msg.payload?.headers;
-                return {
-                  id: msg.id ?? id,
-                  threadId: msg.threadId ?? "",
-                  snippet: msg.snippet ?? "",
-                  subject: getHeader(headers, "Subject") ?? "",
-                  from: getHeader(headers, "From") ?? "",
-                  to: getHeader(headers, "To") ?? "",
-                  date: msg.internalDate != null ? String(msg.internalDate) : null,
-                  timestamp: messageTimestamp(msg.internalDate != null ? String(msg.internalDate) : null),
-                  labelIds: msg.labelIds ?? [],
-                };
-              } catch {
-                return null;
-              }
-            }),
-          );
-
-          for (const item of fetched) {
-            if (item) candidates.push(item);
-          }
-        } catch (apiErr) {
-          console.error("Failed to fetch messages for search:", apiErr);
-        }
-      }
+      const candidates: CandidateEmail[] = rows.map((row) => ({
+        id: row.messageId,
+        threadId: row.threadId,
+        subject: row.subject,
+        from: row.fromAddress,
+        to: row.toAddress,
+        snippet: row.snippet,
+        body: row.body ?? undefined,
+        date: row.internalDate ?? null,
+        timestamp: messageTimestamp(row.internalDate),
+        labelIds: Array.isArray(row.labelIds) ? (row.labelIds as string[]) : [],
+      }));
 
       // 2. Run intelligent multi-mode search
       const searchResult = await executeIntelligentSearch({
@@ -370,25 +308,21 @@ export const intelligenceRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const tenantId = await getTenantId(ctx.session.user.id);
-      const tenant = await getTenant(ctx.session.user.id);
 
       try {
-        const cached = await tenant.gmail.db.messages.list({ limit: input.limit });
-        const items = cached.map((c) => {
-          const d = c.data as {
-            subject?: string;
-            from?: string;
-            snippet?: string;
-            body?: string;
-          };
-          return {
-            id: c.entity_id,
-            subject: d.subject ?? null,
-            from: d.from ?? null,
-            snippet: d.snippet ?? null,
-            body: d.body ?? null,
-          };
+        const rows = await db.query.gmailMessages.findMany({
+          where: eq(gmailMessages.tenantId, tenantId),
+          orderBy: [desc(gmailMessages.internalDate)],
+          limit: input.limit,
         });
+
+        const items = rows.map((r) => ({
+          id: r.messageId,
+          subject: r.subject !== "" ? r.subject : null,
+          from: r.fromAddress !== "" ? r.fromAddress : null,
+          snippet: r.snippet !== "" ? r.snippet : null,
+          body: r.body ?? null,
+        }));
 
         const embeddings = await getOrGenerateEmbeddings(tenantId, items);
         return {

@@ -409,12 +409,35 @@ export function GmailPanel({
     },
   );
 
-  const refreshInbox = api.gmail.refreshInbox.useMutation({
+  const syncStatusQuery = api.gmail.getSyncStatus.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "syncing" || status === "initial_sync_required"
+        ? 3000
+        : 60000;
+    },
+  });
+
+  const triggerSync = api.gmail.triggerSync.useMutation({
     onSuccess: async () => {
+      await utils.gmail.getSyncStatus.invalidate();
+      await utils.gmail.searchEmails.invalidate();
+    },
+  });
+
+  const refreshInbox = api.gmail.triggerSync.useMutation({
+    onSuccess: async () => {
+      await utils.gmail.getSyncStatus.invalidate();
       await utils.gmail.searchEmails.invalidate();
       await utils.gmail.listDrafts.invalidate();
     },
   });
+
+  useEffect(() => {
+    if (syncStatusQuery.data?.status === "synced") {
+      void utils.gmail.searchEmails.invalidate();
+    }
+  }, [syncStatusQuery.data?.status, utils]);
 
   const createDraft = api.gmail.createDraft.useMutation({
     onSuccess: async () => {
@@ -1186,17 +1209,31 @@ useEffect(() => {
           </div>
         </div>
 
-        {(refreshInbox.error ?? refreshInbox.data) && (
-          <div className="border-b px-4 py-2 text-xs">
-            {refreshInbox.error && (
-              <p className="text-destructive">{refreshInbox.error.message}</p>
-            )}
+        {(syncStatusQuery.data?.status === "syncing" ||
+          syncStatusQuery.data?.status === "initial_sync_required") && (
+          <div className="bg-primary/10 text-primary flex items-center justify-between border-b px-4 py-2 text-xs">
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Syncing your mailbox with Gmail in the background...
+            </span>
+          </div>
+        )}
 
-            {refreshInbox.data && (
-              <p className="text-muted-foreground">
-                {refreshInbox.data.synced} synced from Google
-              </p>
-            )}
+        {syncStatusQuery.data?.status === "sync_error" && (
+          <div className="bg-destructive/10 text-destructive flex items-center justify-between border-b px-4 py-2 text-xs">
+            <span>
+              Sync error: {syncStatusQuery.data.lastError ?? "Failed to sync with Gmail."}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => triggerSync.mutate()}
+              disabled={triggerSync.isPending}
+            >
+              Retry Sync
+            </Button>
           </div>
         )}
 

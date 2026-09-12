@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { processOAuthCallback } from "corsair/oauth";
 
 import { corsair } from "@/server/corsair";
+import { db } from "@/server/db";
+import { triggerBackgroundSync } from "@/server/lib/gmail-sync";
 
 export async function GET(request: Request) {
   try {
@@ -45,6 +47,16 @@ export async function GET(request: Request) {
       state,
       redirectUri,
     });
+
+    // Start initial sync once when Gmail connects successfully
+    if (result.plugin === "gmail" && result.tenantId) {
+      const tenant = corsair.withTenant(result.tenantId);
+      triggerBackgroundSync(
+        result.tenantId,
+        tenant as Parameters<typeof triggerBackgroundSync>[1],
+        db,
+      );
+    }
 
     const redirectUrl = new URL("/settings/integrations", request.url);
 
