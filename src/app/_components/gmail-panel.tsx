@@ -36,9 +36,9 @@ import {
   X,
   Sparkles,
 } from "lucide-react";
-import DOMPurify from "dompurify";
+import { EmailRenderer } from "@/app/_components/email-renderer";
 
-import { formatMessageDate, formatSender, LinkifiedText } from "@/lib/display";
+import { formatMessageDate, formatSender } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -996,43 +996,49 @@ export function GmailPanel({
     openComposer("reply");
   }, []);
 
-  const openForward = useCallback((email: {
-    from: string;
-    to: string;
-    subject: string;
-    body: string;
-    date?: string | null;
-  }) => {
-    setTo("");
-    setCc("");
-    setBcc("");
+  const openForward = useCallback(
+    (email: {
+      from: string;
+      to: string;
+      subject: string;
+      body: string;
+      date?: string | null;
+    }) => {
+      setTo("");
+      setCc("");
+      setBcc("");
 
-    setSubject(
-      email.subject.toLowerCase().startsWith("fwd:")
-        ? email.subject
-        : `Fwd: ${email.subject}`,
-    );
+      setSubject(
+        email.subject.toLowerCase().startsWith("fwd:")
+          ? email.subject
+          : `Fwd: ${email.subject}`,
+      );
 
-    const formattedDate = email.date
-      ? new Date(email.date).toLocaleString()
-      : "";
-    const quoteHeader = `\n\n---------- Forwarded message ---------\nFrom: ${email.from}\nDate: ${formattedDate}\nSubject: ${email.subject}\nTo: ${email.to}\n\n`;
+      const formattedDate = email.date
+        ? new Date(email.date).toLocaleString()
+        : "";
+      const quoteHeader = `\n\n---------- Forwarded message ---------\nFrom: ${email.from}\nDate: ${formattedDate}\nSubject: ${email.subject}\nTo: ${email.to}\n\n`;
 
-    setBody(`${quoteHeader}${email.body}`);
-    openComposer("forward");
-  }, []);
+      setBody(`${quoteHeader}${email.body}`);
+      openComposer("forward");
+    },
+    [],
+  );
 
-  const handleForwardFromList = useCallback(async (messageId: string) => {
-    try {
-      const email = await utils.gmail.getMessage.fetch({ id: messageId });
+  const handleForwardFromList = useCallback(
+    async (messageId: string) => {
+      try {
+        const email = await utils.gmail.getMessage.fetch({ id: messageId });
 
-      if (!email) return;
+        if (!email) return;
 
-      openForward(email);
-    } catch {
-      // The existing message view will surface fetch errors if the message cannot be opened.
-    }
-  }, [openForward, utils.gmail.getMessage]);
+        openForward(email);
+      } catch {
+        // The existing message view will surface fetch errors if the message cannot be opened.
+      }
+    },
+    [openForward, utils.gmail.getMessage],
+  );
 
   const isStarred = selectedEmail.data?.labelIds?.includes("STARRED") ?? false;
   const createScheduledMeeting = () => {
@@ -1088,14 +1094,14 @@ export function GmailPanel({
   }, [isStarred, modifyMessageLabels, selectedEmail.data?.id]);
 
   // Keyboard list navigation cursor state
-const [focusedIndex, setFocusedIndex] = useState(0);
+  const [focusedIndex, setFocusedIndex] = useState(0);
 
-// Keep focused index in bounds
-useEffect(() => {
-  if (focusedIndex >= processedEmails.length && processedEmails.length > 0) {
-    setFocusedIndex(processedEmails.length - 1);
-  }
-}, [processedEmails.length, focusedIndex]);
+  // Keep focused index in bounds
+  useEffect(() => {
+    if (focusedIndex >= processedEmails.length && processedEmails.length > 0) {
+      setFocusedIndex(processedEmails.length - 1);
+    }
+  }, [processedEmails.length, focusedIndex]);
 
   const isDeletePending =
     deleteMessage.isPending ||
@@ -1222,7 +1228,8 @@ useEffect(() => {
         {syncStatusQuery.data?.status === "sync_error" && (
           <div className="bg-destructive/10 text-destructive flex items-center justify-between border-b px-4 py-2 text-xs">
             <span>
-              Sync error: {syncStatusQuery.data.lastError ?? "Failed to sync with Gmail."}
+              Sync error:{" "}
+              {syncStatusQuery.data.lastError ?? "Failed to sync with Gmail."}
             </span>
             <Button
               type="button"
@@ -2080,7 +2087,7 @@ function MailList({
                   isUnread && "bg-muted/40",
                   isSelected && "bg-accent/60",
                   selectedId === email.id && "bg-accent",
-                  isFocused && "ring-2 ring-primary/50 ring-inset bg-accent/20",
+                  isFocused && "ring-primary/50 bg-accent/20 ring-2 ring-inset",
                   isUrgent && "border-l-3 border-l-rose-500",
                 )}
               >
@@ -3718,93 +3725,7 @@ function EmailBody({
   body: string;
   bodyMimeType: "text/plain" | "text/html";
 }) {
-  const sanitizedHtml = useMemo(
-    () =>
-      bodyMimeType === "text/html"
-        ? DOMPurify.sanitize(body, {
-            ALLOWED_TAGS: [
-              "a",
-              "b",
-              "blockquote",
-              "br",
-              "caption",
-              "code",
-              "div",
-              "em",
-              "h1",
-              "h2",
-              "h3",
-              "h4",
-              "h5",
-              "h6",
-              "hr",
-              "i",
-              "li",
-              "ol",
-              "p",
-              "pre",
-              "span",
-              "strong",
-              "sub",
-              "sup",
-              "table",
-              "tbody",
-              "td",
-              "tfoot",
-              "th",
-              "thead",
-              "tr",
-              "u",
-              "ul",
-            ],
-            ALLOWED_ATTR: [
-              "align",
-              "border",
-              "cellpadding",
-              "cellspacing",
-              "cite",
-              "colspan",
-              "href",
-              "name",
-              "rowspan",
-              "title",
-              "valign",
-              "width",
-            ],
-            ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|#|\/(?!\/))/i,
-            FORBID_TAGS: [
-              "base",
-              "embed",
-              "form",
-              "iframe",
-              "img",
-              "input",
-              "link",
-              "meta",
-              "object",
-              "script",
-              "style",
-            ],
-            FORBID_ATTR: ["src", "srcset", "style", "onerror", "onclick"],
-          })
-        : "",
-    [body, bodyMimeType],
-  );
-
-  if (bodyMimeType === "text/html" && sanitizedHtml) {
-    return (
-      <div
-        className="email-html-body [&_a]:text-primary [&_blockquote]:border-primary/40 [&_pre]:bg-muted [&_td]:border-border [&_th]:border-border [&_th]:bg-muted/60 overflow-x-auto text-sm leading-6 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_li]:my-1 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:p-3 [&_table]:my-4 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2 [&_th]:text-left [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6"
-        dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-      />
-    );
-  }
-
-  return (
-    <div className="[&_a]:text-primary text-sm leading-6 whitespace-pre-wrap [&_a]:underline [&_a]:underline-offset-2">
-      <LinkifiedText text={body} />
-    </div>
-  );
+  return <EmailRenderer body={body} bodyMimeType={bodyMimeType} />;
 }
 
 function StatusLine({
