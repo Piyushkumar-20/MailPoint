@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { SendHorizontal } from "lucide-react";
+import { Paperclip, SendHorizontal } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ export function AgentComposer({
 
   return (
     <form
-      className="mx-auto w-full max-w-3xl px-3 pb-3 md:px-6 md:pb-5"
+      className="mx-auto w-full max-w-4xl px-3 pb-3 md:px-6 md:pb-5"
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) onSubmit();
@@ -40,8 +40,18 @@ export function AgentComposer({
       <label htmlFor="agent-composer" className="sr-only">
         Ask MailPoint anything
       </label>
-      <div className="bg-card focus-within:border-ring focus-within:ring-ring/30 rounded-lg border p-2 shadow-sm transition-colors focus-within:ring-3">
-        <div className="flex items-end gap-2">
+      <div className="rounded-2xl border border-border/80 bg-card/90 dark:border-white/10 dark:bg-[#11161d]/90 p-2 shadow-sm transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          {/* Attachment Icon Button */}
+          <button
+            type="button"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground select-none"
+            aria-label="Attach file"
+            title="Attach file (coming soon)"
+          >
+            <Paperclip className="size-4" />
+          </button>
+
           <textarea
             ref={textareaRef}
             id="agent-composer"
@@ -57,7 +67,7 @@ export function AgentComposer({
             rows={1}
             placeholder="Ask MailPoint anything..."
             className={cn(
-              "text-foreground max-h-42 min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-2 text-sm leading-5 outline-none",
+              "text-foreground max-h-42 min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1.5 text-sm leading-5 outline-none",
               "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60",
             )}
           />
@@ -67,7 +77,7 @@ export function AgentComposer({
             size="icon"
             disabled={!canSend}
             aria-label="Send message"
-            className="mb-0.5"
+            className="size-8 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-all shrink-0"
           >
             <SendHorizontal className="size-4" />
           </Button>

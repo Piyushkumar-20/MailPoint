@@ -36,9 +36,82 @@ export const agentConfirmationSchema = z.object({
 
 export type AgentConfirmation = z.infer<typeof agentConfirmationSchema>;
 
+export type EmailItem = {
+  id?: string;
+  from?: string;
+  fromName?: string;
+  fromEmail?: string;
+  subject?: string;
+  snippet?: string;
+  date?: string;
+  time?: string;
+  rawDate?: string;
+  tags?: string[];
+  unread?: boolean;
+};
+
+export type CalendarEventItem = {
+  id?: string;
+  summary: string;
+  start: string;
+  end?: string;
+  duration?: string;
+  location?: string;
+  meetLink?: string;
+  attendees?: Array<{ email: string; displayName?: string }>;
+  status?: string;
+};
+
+export type AvailabilityData = {
+  isAvailable: boolean;
+  requestedTime?: {
+    start: string;
+    end: string;
+    durationMinutes?: number;
+  };
+  conflicts?: Array<{ calendar?: string; start: string; end: string; summary?: string }>;
+  suggestedAlternatives?: Array<{ start: string; end: string }>;
+  warnings?: string[];
+};
+
+export type AgentStructuredData =
+  | {
+      type: "email-list" | "search-results";
+      title?: string;
+      subtitle?: string;
+      count?: number;
+      items: EmailItem[];
+      query?: string;
+    }
+  | {
+      type: "calendar-list";
+      title?: string;
+      subtitle?: string;
+      count?: number;
+      items: CalendarEventItem[];
+    }
+  | {
+      type: "availability";
+      title?: string;
+      data: AvailabilityData;
+    }
+  | {
+      type: "empty";
+      title?: string;
+      message?: string;
+      query?: string;
+    }
+  | {
+      type: "error";
+      title?: string;
+      message: string;
+      code?: string;
+    };
+
 export const agentResponseSchema = z.object({
   output: z.string(),
   confirmation: agentConfirmationSchema.optional(),
+  structuredData: z.custom<AgentStructuredData>().optional(),
 });
 
 export type AgentResponse = z.infer<typeof agentResponseSchema>;

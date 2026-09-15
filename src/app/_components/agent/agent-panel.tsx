@@ -203,6 +203,7 @@ export function AgentPanel({
         id: createMessageId(),
         role: "user",
         content: input,
+        createdAt: new Date().toISOString(),
       };
 
       setMessages((currentMessages) => [
@@ -228,6 +229,8 @@ export function AgentPanel({
             role: "assistant",
             content: response.output,
             confirmation: response.confirmation,
+            structuredData: response.structuredData,
+            createdAt: new Date().toISOString(),
           },
         ]);
       } catch (error) {
@@ -240,6 +243,7 @@ export function AgentPanel({
               error instanceof Error
                 ? error.message
                 : "MailPoint couldn't process that request. Please try again.",
+            createdAt: new Date().toISOString(),
           },
         ]);
       } finally {
@@ -248,6 +252,18 @@ export function AgentPanel({
     },
     [isLoading, messages, handleConfirmationUpdate],
   );
+
+  const handleRegenerate = useCallback(() => {
+    if (isLoading || messages.length === 0) return;
+    // Find the last user message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg?.role === "user") {
+        void sendMessage(msg.content);
+        break;
+      }
+    }
+  }, [isLoading, messages, sendMessage]);
 
   const handleNewConversation = () => {
     if (messages.length === 0 || isLoading) {
@@ -283,6 +299,7 @@ export function AgentPanel({
         isLoading={isLoading}
         onSuggestion={sendMessage}
         onConfirmationUpdate={handleConfirmationUpdate}
+        onRegenerate={handleRegenerate}
       />
 
       <div

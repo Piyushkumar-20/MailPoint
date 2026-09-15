@@ -115,6 +115,7 @@ export async function POST(request: Request) {
     const responsePayload: AgentResponse = {
       output: result.finalOutput,
       confirmation,
+      structuredData: result.structuredData,
     };
 
     return NextResponse.json(responsePayload);

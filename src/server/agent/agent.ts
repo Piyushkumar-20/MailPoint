@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { CalendarEventProposal } from "@/lib/agent-types";
+import type { CalendarEventProposal, AgentStructuredData, AvailabilityData } from "@/lib/agent-types";
 
 function getGroqClient() {
   const apiKey = process.env.GROQ_API_KEY;
@@ -22,6 +22,7 @@ export type AgentContext = {
 export type AgentRunResult = {
   finalOutput: string;
   proposal?: CalendarEventProposal;
+  structuredData?: AgentStructuredData;
 };
 
 import { calculateAvailability } from "@/server/lib/calendar-availability";
@@ -702,6 +703,7 @@ CRITICAL RULES:
   ];
 
   let proposal: CalendarEventProposal | undefined;
+  let structuredData: AgentStructuredData | undefined;
   let finalOutput = "";
   const maxTurns = 6;
 
@@ -777,6 +779,18 @@ CRITICAL RULES:
             },
             context,
           );
+          try {
+            const parsedAvail = JSON.parse(availResult) as AvailabilityData;
+            if (parsedAvail && typeof parsedAvail.isAvailable === "boolean") {
+              structuredData = {
+                type: "availability",
+                data: parsedAvail,
+              };
+            }
+          } catch {
+            // ignore
+          }
+
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
@@ -805,6 +819,81 @@ CRITICAL RULES:
         } else if (fnName === "run_script") {
           const codeSnippet = typeof args.code === "string" ? args.code : "";
           const result = await executeRunScript(corsair, codeSnippet);
+
+          try {
+            const parsedScript = JSON.parse(result) as unknown;
+            if (Array.isArray(parsedScript)) {
+              if (parsedScript.length === 0) {
+                structuredData = {
+                  type: "empty",
+                  message: "No results found.",
+                };
+              } else {
+                const first = parsedScript[0] as Record<string, unknown> | undefined;
+                const isEmail = Boolean(first && typeof first === "object" && ("from" in first || "subject" in first || "snippet" in first));
+                const isCalendar = Boolean(first && typeof first === "object" && ("summary" in first || "start" in first));
+
+                const getStr = (val: unknown, fallback = ""): string =>
+                  typeof val === "string" ? val : fallback;
+
+                if (isEmail) {
+                  structuredData = {
+                    type: "email-list",
+                    count: parsedScript.length,
+                    items: parsedScript.map((it: Record<string, unknown>, idx: number) => {
+                      const fromStr = getStr(it.from);
+                      const match = /(.*?)(?:<([^>]+)>|$)/.exec(fromStr.trim());
+                      const extractedName = match?.[2] ? (match[1]?.trim().replace(/^["']|["']$/g, "") ?? match[2]) : fromStr;
+                      const email = match?.[2] ?? (fromStr.includes("@") ? fromStr : "");
+                      return {
+                        id: typeof it.id === "string" ? it.id : `email-${idx}`,
+                        from: fromStr,
+                        fromName: extractedName ? extractedName : (email || "Unknown"),
+                        fromEmail: email,
+                        subject: getStr(it.subject, "(No Subject)"),
+                        snippet: getStr(it.snippet),
+                        rawDate: getStr(it.date),
+                        date: getStr(it.date),
+                      };
+                    }),
+                  };
+                } else if (isCalendar) {
+                  structuredData = {
+                    type: "calendar-list",
+                    count: parsedScript.length,
+                    items: parsedScript.map((it: Record<string, unknown>, idx: number) => {
+                      let startStr = "";
+                      if (it.start && typeof it.start === "object") {
+                        const sObj = it.start as Record<string, unknown>;
+                        startStr = getStr(sObj.dateTime) || getStr(sObj.date);
+                      } else {
+                        startStr = getStr(it.start);
+                      }
+
+                      let endStr = "";
+                      if (it.end && typeof it.end === "object") {
+                        const eObj = it.end as Record<string, unknown>;
+                        endStr = getStr(eObj.dateTime) || getStr(eObj.date);
+                      } else {
+                        endStr = getStr(it.end);
+                      }
+
+                      return {
+                        id: typeof it.id === "string" ? it.id : `cal-${idx}`,
+                        summary: getStr(it.summary, "(No Title)"),
+                        start: startStr,
+                        end: endStr,
+                        location: typeof it.location === "string" ? it.location : undefined,
+                      };
+                    }),
+                  };
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
@@ -825,5 +914,6 @@ CRITICAL RULES:
         ? `I have prepared the calendar event "${proposal.summary}". Please confirm to add it to your Google Calendar.`
         : "I have processed your request."),
     proposal,
+    structuredData,
   };
 }

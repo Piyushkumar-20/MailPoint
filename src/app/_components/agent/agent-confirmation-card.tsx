@@ -130,8 +130,8 @@ export function AgentConfirmationCard({
   };
 
   return (
-    <div className="mt-3 rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-      <div className="flex items-center gap-2 border-b pb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className="mt-3 rounded-xl border border-border/80 bg-muted/20 p-4 text-card-foreground shadow-xs dark:border-white/10 dark:bg-zinc-900/40">
+      <div className="flex items-center gap-2 border-b border-border/60 pb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <Calendar className="size-4 text-primary" />
         <span>Create calendar event?</span>
       </div>

@@ -13,6 +13,7 @@ export function AgentConversation({
   isLoading,
   onSuggestion,
   onConfirmationUpdate,
+  onRegenerate,
 }: {
   messages: Message[];
   isLoading: boolean;
@@ -22,6 +23,7 @@ export function AgentConversation({
     updated: AgentConfirmation,
     outcomeMessage?: string,
   ) => void;
+  onRegenerate?: (prompt: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +50,7 @@ export function AgentConversation({
             key={message.id}
             message={message}
             onConfirmationUpdate={onConfirmationUpdate}
+            onRegenerate={onRegenerate}
           />
         ))}
 
