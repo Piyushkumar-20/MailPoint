@@ -840,15 +840,17 @@ CRITICAL RULES:
                   structuredData = {
                     type: "email-list",
                     count: parsedScript.length,
-                    items: parsedScript.map((it: Record<string, unknown>, idx: number) => {
+                    items: parsedScript.map((it: Record<string, unknown>) => {
                       const fromStr = getStr(it.from);
                       const match = /(.*?)(?:<([^>]+)>|$)/.exec(fromStr.trim());
-                      const extractedName = match?.[2] ? (match[1]?.trim().replace(/^["']|["']$/g, "") ?? match[2]) : fromStr;
+                      const rawName = match?.[2] ? (match[1]?.trim().replace(/^["']|["']$/g, "") ?? match[2]) : fromStr;
+                      const extractedName = rawName.replace(/^\*{1,2}|^\_{1,2}|\*{1,2}$|\_{1,2}$/g, "").trim();
                       const email = match?.[2] ?? (fromStr.includes("@") ? fromStr : "");
+                      const realId = typeof it.id === "string" && it.id.trim().length > 0 ? it.id.trim() : undefined;
                       return {
-                        id: typeof it.id === "string" ? it.id : `email-${idx}`,
+                        id: realId,
                         from: fromStr,
-                        fromName: extractedName ? extractedName : (email || "Unknown"),
+                        fromName: extractedName || email || "Unknown",
                         fromEmail: email,
                         subject: getStr(it.subject, "(No Subject)"),
                         snippet: getStr(it.snippet),
@@ -891,7 +893,6 @@ CRITICAL RULES:
               }
             }
           } catch {
-            // ignore
           }
 
           messages.push({

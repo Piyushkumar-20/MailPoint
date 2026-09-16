@@ -19,12 +19,20 @@ export function AgentEmailCard({
 
   const handleExternalOpen = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const query = email.id ?? email.subject ?? "";
-    window.open(
-      `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(query)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const id = email.id;
+    const isRealGmailId =
+      typeof id === "string" &&
+      id.length >= 10 &&
+      /^[a-zA-Z0-9_-]+$/.test(id) &&
+      !id.startsWith("email-");
+
+    const url = isRealGmailId
+      ? `https://mail.google.com/mail/u/0/#all/${id}`
+      : email.subject
+        ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(email.subject)}`
+        : "https://mail.google.com/mail/u/0/#inbox";
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -137,7 +145,7 @@ export function AgentEmailCard({
               variant="outline"
               size="icon"
               onClick={handleExternalOpen}
-              aria-label={`Open email in Gmail web`}
+              aria-label={`Open in Gmail: ${email.subject ?? "this email"}`}
               title="Open in Gmail"
               className="size-8 rounded-lg border-border/80 bg-background/80 hover:bg-accent transition-colors"
             >

@@ -41,12 +41,23 @@ export function AgentEmailModal({
   };
 
   const handleOpenGmail = () => {
-    const query = email.id ?? email.subject ?? "";
-    window.open(
-      `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(query)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    // The real Gmail message ID flows from: Gmail API → it.id → EmailItem.id
+    // Defensive sanity check: a real Gmail message ID is an alphanumeric hex-like string ≥ 10 chars.
+    // This check guards against any residual synthetic values — it does NOT replace the real source.
+    const id = email.id;
+    const isRealGmailId =
+      typeof id === "string" &&
+      id.length >= 10 &&
+      /^[a-zA-Z0-9_-]+$/.test(id) &&
+      !id.startsWith("email-");
+
+    const url = isRealGmailId
+      ? `https://mail.google.com/mail/u/0/#all/${id}`
+      : email.subject
+        ? `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(email.subject)}`
+        : "https://mail.google.com/mail/u/0/#inbox";
+
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (

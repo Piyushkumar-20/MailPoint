@@ -144,7 +144,9 @@ export function parseSender(fromStr: string): { name: string; email: string } {
   if (match) {
     const rawEmail = match[2]?.trim() ?? (trimmed.includes("@") ? trimmed : "");
     const rawName = match[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
-    const name = rawName ? rawName : (rawEmail.split("@")[0] ?? "Unknown");
+
+    const cleanName = rawName.replace(/^\*{1,2}|^\_{1,2}|\*{1,2}$|\_{1,2}$/g, "").trim();
+    const name = cleanName ? cleanName : (rawEmail.split("@")[0] ?? "Unknown");
     return { name, email: rawEmail };
   }
   return { name: trimmed, email: trimmed.includes("@") ? trimmed : "" };
@@ -323,12 +325,12 @@ export function detectAgentResponse(
       const snippetIdx = lowerHeaders.findIndex((h) => h.includes("snippet") || h.includes("preview") || h.includes("summary"));
       const idIdx = lowerHeaders.findIndex((h) => h.includes("id"));
 
-      const emails: EmailItem[] = rows.map((row, index) => {
+      const emails: EmailItem[] = rows.map((row) => {
         const rawFrom = fromIdx !== -1 ? row[fromIdx] ?? "" : "";
         const rawSubject = subjectIdx !== -1 ? row[subjectIdx] ?? "" : "(No Subject)";
         const rawDate = dateIdx !== -1 ? row[dateIdx] ?? "" : "";
         const rawSnippet = snippetIdx !== -1 ? row[snippetIdx] ?? "" : "";
-        const rawId = idIdx !== -1 ? row[idIdx] ?? `email-${index}` : `email-${index}`;
+        const rawId = idIdx !== -1 && row[idIdx] ? row[idIdx] : undefined;
 
         const { name, email } = parseSender(rawFrom);
         const { date, time } = formatEmailDateTime(rawDate);
