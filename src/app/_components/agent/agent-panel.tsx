@@ -287,7 +287,7 @@ export function AgentPanel({
   };
 
   return (
-    <section className="bg-muted/20 flex h-full min-h-0 flex-col">
+    <section className="bg-background flex h-full min-h-0 flex-col">
       <AgentHeader
         hasMessages={messages.length > 0}
         isLoading={isLoading}
@@ -303,7 +303,7 @@ export function AgentPanel({
       />
 
       <div
-        className="bg-background/95 border-t pt-3"
+        className="bg-background/95 border-t border-border/60 pt-2.5 backdrop-blur-md"
         style={
           footerMinHeight
             ? { minBlockSize: footerMinHeight }
