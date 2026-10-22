@@ -270,11 +270,6 @@ export const gmailRouter = createTRPCRouter({
     };
   }),
 
-  /**
-   * Explicit sync trigger — called by the UI refresh button or after actions
-   * that the caller knows should update the index (e.g. sendEmail).
-   * Fire-and-forget: returns immediately; sync runs in background.
-   */
   triggerSync: protectedProcedure.mutation(async ({ ctx }) => {
     const tenantId = await getTenantId(ctx.session.user.id);
     const tenant = await getTenant(ctx.session.user.id);
@@ -285,23 +280,6 @@ export const gmailRouter = createTRPCRouter({
     return { status: state?.status ?? "syncing" };
   }),
 
-  // -------------------------------------------------------------------------
-  // Mailbox query — pure Postgres read model query
-  // Normal inbox/starred/sent/trash renders hit this.
-  // Architecture: one DB query, zero Gmail API calls, zero sync triggers.
-  // -------------------------------------------------------------------------
-
-  /**
-   * searchEmails — fast read-only mailbox query from the local index.
-   *
-   * Performance:
-   *   - One tenant resolution
-   *   - One Postgres query (with indexes on label flags + internalDate)
-   *   - Zero Corsair findByEntityId calls
-   *   - Zero Gmail messages.get calls
-   *   - Zero sync triggers / sync state creation
-   *   - Pagination via limit/offset
-   */
   searchEmails: protectedProcedure
     .input(
       paginationSchema.extend({
@@ -388,21 +366,6 @@ export const gmailRouter = createTRPCRouter({
       }));
     }),
 
-  // -------------------------------------------------------------------------
-  // getMessage — lazy body fetch
-  // -------------------------------------------------------------------------
-
-  /**
-   * Fetches a single message for the reading pane.
-   *
-   * Flow:
-   *   1. Query gmail_messages by (tenantId, messageId)
-   *   2. If bodyStored=true → return cached body immediately
-   *   3. Else → fetch from Gmail API (format: "full"), cache body, return
-   *
-   * The list metadata (from/to/subject/snippet) is always returned from
-   * the local index even when fetching the body from Gmail.
-   */
   getMessage: protectedProcedure
     .input(z.object({ id: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
@@ -469,8 +432,6 @@ export const gmailRouter = createTRPCRouter({
           (err) => console.warn("[gmail.getMessage] Failed to cache body:", err),
         );
       } else {
-        // Message not yet in index — upsert it (e.g. user opened a message
-        // before sync completed)
         void upsertGmailMessage(tenantId, message, db).catch((err) =>
           console.warn("[gmail.getMessage] Failed to upsert message:", err),
         );
@@ -497,9 +458,6 @@ export const gmailRouter = createTRPCRouter({
       };
     }),
 
-  // -------------------------------------------------------------------------
-  // Drafts (unchanged — uses Corsair draft store, not gmail_messages)
-  // -------------------------------------------------------------------------
 
   listDrafts: protectedProcedure
     .input(paginationSchema)

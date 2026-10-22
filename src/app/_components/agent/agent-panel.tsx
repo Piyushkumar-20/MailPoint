@@ -49,7 +49,7 @@ function loadMessages(): Message[] {
         typeof m === "object" &&
         m !== null &&
         typeof (m as Message).id === "string" &&
-        (typeof (m as Message).role === "string") &&
+        typeof (m as Message).role === "string" &&
         typeof (m as Message).content === "string",
     );
   } catch {
@@ -206,10 +206,7 @@ export function AgentPanel({
         createdAt: new Date().toISOString(),
       };
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        userMessage,
-      ]);
+      setMessages((currentMessages) => [...currentMessages, userMessage]);
       setComposerValue("");
       setIsLoading(true);
 
@@ -303,18 +300,17 @@ export function AgentPanel({
       />
 
       <div
-        className="bg-background/95 border-t border-border/60 pt-2.5 backdrop-blur-md"
-        style={
-          footerMinHeight
-            ? { minBlockSize: footerMinHeight }
-            : undefined
-        }
+        className="bg-background/95 border-border/60 border-t pt-2.5 backdrop-blur-md"
+        style={footerMinHeight ? { minBlockSize: footerMinHeight } : undefined}
       >
         <AgentComposer
           value={composerValue}
           onChange={setComposerValue}
           onSubmit={() => {
             void sendMessage(composerValue);
+          }}
+          onVoiceSubmit={(transcript) => {
+            void sendMessage(transcript);
           }}
           disabled={isLoading}
         />
