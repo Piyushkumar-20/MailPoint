@@ -798,3 +798,13 @@ Completed Workflow
 ```
 
 The core engineering challenge is not simply connecting APIs. It is building a reliable, secure system that can coordinate those services around what the user is actually trying to accomplish.
+
+## Installing MailPoint as a PWA
+
+MailPoint includes a Progressive Web App (PWA) manifest, app icons, a service worker, and an install button for supported browsers.
+
+- Run `pnpm dev` and open `http://localhost:3000` in a supported browser, or deploy over HTTPS.
+- In Chrome or Edge, use the **Install MailPoint** button when it appears, or use the browser menu's install option.
+- On iPhone/iPad, open MailPoint in Safari and choose **Share → Add to Home Screen**.
+
+The service worker does not cache authenticated pages, Gmail/Calendar data, or API responses. When offline, it displays a basic offline page; the application still needs a network connection for live mail, calendar, authentication, and AI features.

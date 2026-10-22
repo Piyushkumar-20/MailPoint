@@ -6,6 +6,7 @@ import { Geist, Oxanium } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { TRPCReactProvider } from "@/trpc/react";
+import { PWAInstallPrompt } from "@/app/pwa-install-prompt";
 
 const geistHeading = Geist({
   subsets: ["latin"],
@@ -20,7 +21,16 @@ const oxanium = Oxanium({
 export const metadata: Metadata = {
   title: "MailPoint",
   description: "Gmail and Calendar powered by MailPoint",
-  icons: [{ rel: "icon", url: "/mailpoint-icon.png?v=2" }, { rel: "shortcut icon", url: "/favicon.ico?v=2" }],
+  icons: [
+    { rel: "icon", url: "/mailpoint-icon.png?v=2" },
+    { rel: "shortcut icon", url: "/favicon.ico?v=2" },
+    { rel: "apple-touch-icon", url: "/icons/mailpoint-192.png" },
+  ],
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MailPoint",
+  },
 };
 
 export default function RootLayout({
@@ -44,7 +54,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <TRPCReactProvider>{children}</TRPCReactProvider>
+          <TRPCReactProvider>
+            {children}
+            <PWAInstallPrompt />
+          </TRPCReactProvider>
         </ThemeProvider>
       </body>
     </html>
