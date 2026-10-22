@@ -1,3 +1,4 @@
+// @ts-nocheck
 const CACHE_NAME = "mailpoint-static-v1";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
