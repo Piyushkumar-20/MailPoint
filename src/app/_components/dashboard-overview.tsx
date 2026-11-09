@@ -1,134 +1,102 @@
 "use client";
 
-import { useState, type ComponentType, type ReactNode } from "react";
-import { CalendarDays, Mail, RefreshCw } from "lucide-react";
-
+import { useMemo, useState, type ReactNode } from "react";
 import {
-  formatEventWhen,
-  formatMessageDate,
-  formatSender,
-} from "@/lib/display";
+  ArrowRight,
+  CalendarDays,
+  Check,
+  Clock3,
+  Inbox,
+  Mail,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
+
+import { formatEventWhen } from "@/lib/display";
 import { getWeekBounds } from "@/lib/week";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
-type NavigateTarget = "inbox" | "calendar" | "integrations";
+type NavigateTarget = "inbox" | "calendar" | "agent" | "integrations";
 
-function statusLabel(
-  state: string | undefined,
-  loading: boolean,
-  error: boolean,
-) {
-  if (loading) return "Checking";
-  if (error) return "Connection issue";
-  if (state === "connected") return "Connected";
-  if (state === "missing_credentials") return "Missing credentials";
-  return "Not connected";
+function senderLabel(sender: string) {
+  const firstSender = sender.split(",")[0]?.trim() || sender;
+  const match = /^\s*(.*?)\s*<[^>]+>\s*$/.exec(firstSender);
+  return (match?.[1] || firstSender).replace(/^"|"$/g, "").trim();
 }
 
-function StatusDot({
-  state,
-  loading,
-  error,
-}: {
-  state: string | undefined;
-  loading: boolean;
-  error: boolean;
-}) {
+function getInitials(sender: string) {
+  const clean = sender.replace(/<[^>]+>/g, "").trim();
+  const name = clean.includes("@") ? clean.split("@")[0] : clean;
+  const parts = name.split(/[\s._-]+/).filter(Boolean);
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
+}
+
+function formatEmailTime(value: string | null | Date) {
+  if (!value) return "";
+  const date = value instanceof Date
+    ? value
+    : /^\d+$/.test(value)
+      ? new Date(Number(value))
+      : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  const sameDay = date.toDateString() === today.toDateString();
+  return sameDay
+    ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function StatusDot({ connected, loading }: { connected: boolean; loading: boolean }) {
   return (
     <span
       className={cn(
-        "size-2 rounded-full",
-        loading && "bg-muted-foreground",
-        error && "bg-destructive",
-        !loading && !error && state === "connected" && "bg-emerald-500",
-        !loading && !error && state !== "connected" && "bg-destructive",
+        "relative inline-flex size-2 rounded-full",
+        loading ? "bg-muted-foreground/60" : connected ? "bg-brand" : "bg-destructive",
       )}
+      aria-label={loading ? "Checking connection" : connected ? "Connected" : "Not connected"}
     />
   );
 }
 
-function ServiceCard({
-  title,
-  description,
+function Panel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <section className={cn("card-chai min-w-0", className)}>{children}</section>;
+}
+
+function PanelHeading({
   icon: Icon,
-  state,
-  loading,
-  error,
-  primaryMetric,
-  primaryLabel,
-  secondaryMetric,
-  secondaryLabel,
-  actionLabel,
+  title,
+  action,
   onAction,
 }: {
+  icon: typeof Mail;
   title: string;
-  description: string;
-  icon: ComponentType<{ className?: string }>;
-  state: string | undefined;
-  loading: boolean;
-  error: boolean;
-  primaryMetric: string;
-  primaryLabel: string;
-  secondaryMetric: string;
-  secondaryLabel: string;
-  actionLabel: string;
-  onAction: () => void;
+  action?: string;
+  onAction?: () => void;
 }) {
   return (
-    <Card className="rounded-lg">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-md">
-            <Icon className="size-4" />
-          </div>
-
-          <div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-        </div>
-
-        <CardAction>
-          <span className="text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs">
-            <StatusDot state={state} loading={loading} error={error} />
-            {statusLabel(state, loading, error)}
-          </span>
-        </CardAction>
-      </CardHeader>
-
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3 border-y py-4">
-          <div className="min-w-0">
-            <p className="truncate text-lg font-semibold">{primaryMetric}</p>
-            <p className="text-muted-foreground text-xs">{primaryLabel}</p>
-          </div>
-
-          <div className="min-w-0">
-            <p className="truncate text-lg font-semibold">{secondaryMetric}</p>
-            <p className="text-muted-foreground text-xs">{secondaryLabel}</p>
-          </div>
-        </div>
-
-        <Button
+    <div className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Icon className="size-[17px] shrink-0 text-muted-foreground" />
+        <h2 className="truncate text-sm font-semibold tracking-tight">{title}</h2>
+      </div>
+      {action && onAction && (
+        <button
           type="button"
-          variant="outline"
-          className="mt-4"
           onClick={onAction}
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-brand"
         >
-          {actionLabel}
-        </Button>
-      </CardContent>
-    </Card>
+          {action}
+          <ArrowRight className="size-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -140,7 +108,6 @@ export function DashboardOverview({
   onNavigate: (section: NavigateTarget) => void;
 }) {
   const week = getWeekBounds(0);
-
   const [isSyncing, setIsSyncing] = useState(false);
 
   const connections = api.gmail.checkConnection.useQuery(undefined, {
@@ -149,17 +116,8 @@ export function DashboardOverview({
   });
 
   const recentMail = api.gmail.searchEmails.useQuery(
-    {
-      query: "",
-      mailbox: "inbox",
-      limit: 5,
-      offset: 0,
-    },
-    {
-      staleTime: 0,
-      refetchOnMount: "always",
-      refetchInterval: 60_000,
-    },
+    { query: "", mailbox: "inbox", limit: 5, offset: 0 },
+    { staleTime: 0, refetchOnMount: "always", refetchInterval: 60_000 },
   );
 
   const events = api.calendar.searchEvents.useQuery(
@@ -170,302 +128,268 @@ export function DashboardOverview({
       limit: 5,
       offset: 0,
     },
-    {
-      staleTime: 0,
-      refetchOnMount: "always",
-      refetchInterval: 60_000,
-    },
+    { staleTime: 0, refetchOnMount: "always", refetchInterval: 60_000 },
   );
 
-  const connectionStatus = connections.data;
-  const gmailState = connectionStatus?.gmail;
-  const calendarState = connectionStatus?.googlecalendar;
+  const gmailState = connections.data?.gmail;
+  const calendarState = connections.data?.googlecalendar;
+  const isGmailConnected = gmailState === "connected";
+  const isCalendarConnected = calendarState === "connected";
+  const greetingName = userName?.trim().split(/\s+/)[0] || "there";
 
-  const nextEvent = events.data?.[0];
-  const greetingName = userName?.split(" ")[0] ?? "there";
+  const { upcomingEvents, todayEvents } = useMemo(() => {
+    const now = Date.now();
+    const today = new Date().toDateString();
+    const allEvents = events.data ?? [];
+    return {
+      upcomingEvents: allEvents.filter((event) => {
+        const start = new Date(event.start).getTime();
+        return Number.isFinite(start) && start >= now;
+      }),
+      todayEvents: allEvents.filter((event) => {
+        const start = new Date(event.start);
+        return !Number.isNaN(start.getTime()) && start.toDateString() === today;
+      }),
+    };
+  }, [events.data]);
 
-  /*
-   * TanStack Query updates dataUpdatedAt whenever the query receives
-   * fresh data. Taking the newest timestamp gives us the latest
-   * successful refresh across Gmail, Calendar and connection status.
-   */
+  const nextEvent = upcomingEvents[0];
   const lastSyncedAt = Math.max(
     connections.dataUpdatedAt,
     recentMail.dataUpdatedAt,
     events.dataUpdatedAt,
   );
+  const isRefreshing =
+    isSyncing || connections.isFetching || recentMail.isFetching || events.isFetching;
 
   const handleSync = async () => {
     setIsSyncing(true);
-
     try {
-      await Promise.all([
-        connections.refetch(),
-        recentMail.refetch(),
-        events.refetch(),
-      ]);
+      await Promise.all([connections.refetch(), recentMail.refetch(), events.refetch()]);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const isLoading =
-    connections.isLoading || recentMail.isLoading || events.isLoading;
-
-  const isRefreshing =
-    isSyncing ||
-    connections.isFetching ||
-    recentMail.isFetching ||
-    events.isFetching;
-
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:px-6">
-      {/* Dashboard Header */}
-      <section className="flex items-start justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">
+      <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div className="min-w-0">
-          <h1 className="font-heading text-2xl font-semibold">Dashboard</h1>
-
-          <p className="text-muted-foreground mt-1 text-sm">
-            Good day, {greetingName}. Here is what is happening across your
-            workspace.
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+          </p>
+          <h1 className="text-[clamp(1.8rem,3vw,2.55rem)] font-semibold leading-[1.08] tracking-[-0.055em]">
+            Good morning, <span className="highlight">{greetingName}</span>
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground sm:text-[15px]">
+            Your email and calendar, in one workspace.
           </p>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex items-center gap-3 self-start sm:self-auto">
           {lastSyncedAt > 0 && (
-            <span className="text-muted-foreground hidden text-xs sm:block">
-              Last synced{" "}
-              {new Date(lastSyncedAt).toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+            <span className="hidden text-[11px] text-muted-foreground sm:block">
+              Synced {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
             </span>
           )}
-
-          <Button
+          <button
             type="button"
-            variant="outline"
             onClick={handleSync}
             disabled={isRefreshing}
+            className="btn-asym inline-flex h-9 items-center gap-2 border border-border/80 px-3 text-xs font-medium text-foreground transition-colors hover:border-brand/40 hover:bg-white/[0.035] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw
-              className={cn("size-3.5", isRefreshing && "animate-spin")}
-            />
-
-            {isRefreshing ? "Syncing" : "Sync"}
-          </Button>
+            <RefreshCw className={cn("size-3.5", isRefreshing && "animate-spin")} />
+            {isRefreshing ? "Syncing" : "Sync workspace"}
+          </button>
         </div>
       </section>
 
-      {/* Integration Summary */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <ServiceCard
-          title="Gmail"
-          description="Mail workspace"
-          icon={Mail}
-          state={gmailState}
-          loading={connections.isLoading}
-          error={Boolean(connections.error ?? recentMail.error)}
-          primaryMetric={
-            recentMail.isLoading
-              ? "Loading"
-              : recentMail.data
-                ? `${recentMail.data.length} recent`
-                : "No data"
-          }
-          primaryLabel="Available now"
-          secondaryMetric={
-            recentMail.data?.[0]?.date
-              ? formatMessageDate(recentMail.data[0].date)
-              : "No recent mail"
-          }
-          secondaryLabel="Latest email"
-          actionLabel="Open Inbox"
-          onAction={() => onNavigate("inbox")}
-        />
+      {/* Compact workspace pulse — sourced only from existing Gmail and Calendar queries. */}
+      <section className="grid gap-3 md:grid-cols-3">
+        <button
+          type="button"
+          onClick={() => onNavigate("inbox")}
+          className="card-chai group flex min-h-[108px] items-center gap-4 px-4 py-4 text-left"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-white/[0.035] text-brand">
+            <Inbox className="size-[18px]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              Inbox <StatusDot connected={isGmailConnected} loading={connections.isLoading} />
+            </span>
+            <span className="mt-1 block truncate text-lg font-semibold tracking-tight">
+              {recentMail.isLoading ? "Loading" : `${recentMail.data?.length ?? 0} recent messages`}
+            </span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              {isGmailConnected ? "Gmail connected" : connections.isLoading ? "Checking connection" : "Check Gmail connection"}
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+        </button>
 
-        <ServiceCard
-          title="Google Calendar"
-          description="Calendar workspace"
-          icon={CalendarDays}
-          state={calendarState}
-          loading={connections.isLoading}
-          error={Boolean(connections.error ?? events.error)}
-          primaryMetric={
-            events.isLoading
-              ? "Loading"
-              : events.data
-                ? `${events.data.length} this week`
-                : "No data"
-          }
-          primaryLabel="Available now"
-          secondaryMetric={nextEvent?.summary ?? "No upcoming events"}
-          secondaryLabel="Latest event"
-          actionLabel="Open Calendar"
-          onAction={() => onNavigate("calendar")}
-        />
+        <button
+          type="button"
+          onClick={() => onNavigate("calendar")}
+          className="card-chai group flex min-h-[108px] items-center gap-4 px-4 py-4 text-left"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-white/[0.035] text-brand">
+            <CalendarDays className="size-[18px]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              Calendar <StatusDot connected={isCalendarConnected} loading={connections.isLoading} />
+            </span>
+            <span className="mt-1 block truncate text-lg font-semibold tracking-tight">
+              {events.isLoading ? "Loading schedule" : nextEvent?.summary || "No upcoming events"}
+            </span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              {nextEvent ? formatEventWhen(nextEvent.start, nextEvent.end) : isCalendarConnected ? "Your schedule is clear" : "Check Calendar connection"}
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate("agent")}
+          className="card-chai group flex min-h-[108px] items-center gap-4 px-4 py-4 text-left"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/[0.07] text-brand">
+            <Sparkles className="size-[18px]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="text-[11px] text-muted-foreground">MailPoint AI</span>
+            <span className="mt-1 block text-lg font-semibold tracking-tight">Your AI workspace</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">Draft, search and organize with AI</span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+        </button>
       </section>
 
-      {/* Workspace Details */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        {/* Recent Mail */}
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle>Recent Mail</CardTitle>
-
-            <CardDescription>
-              Latest Gmail messages available to MailPoint.
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            {recentMail.isLoading && <StatusLine>Loading mail...</StatusLine>}
-
+      <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.95fr)]">
+        <Panel className="overflow-hidden">
+          <PanelHeading icon={Mail} title="Recent emails" action="View inbox" onAction={() => onNavigate("inbox")} />
+          <div className="px-3 sm:px-4">
+            {recentMail.isLoading && (
+              <div className="space-y-4 px-2 py-6">
+                {[0, 1, 2].map((item) => <div key={item} className="h-12 animate-pulse rounded-lg bg-white/[0.045]" />)}
+              </div>
+            )}
             {recentMail.error && (
-              <StatusLine tone="error">{recentMail.error.message}</StatusLine>
+              <div className="px-3 py-8 text-sm text-destructive">{recentMail.error.message}</div>
             )}
-
-            {recentMail.data && recentMail?.data.length === 0 && (
-              <EmptyBlock
-                title="No recent mail"
-                description="Refresh Gmail from the Inbox when you are connected."
-              />
+            {recentMail.data?.length === 0 && (
+              <div className="flex min-h-52 flex-col items-center justify-center px-5 text-center">
+                <span className="mb-3 flex size-10 items-center justify-center rounded-full border border-border text-muted-foreground"><Mail className="size-4" /></span>
+                <p className="text-sm font-medium">Your inbox is quiet</p>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground">New messages will appear here when they arrive.</p>
+              </div>
             )}
-
             {recentMail.data && recentMail.data.length > 0 && (
-              <ul className="divide-y">
+              <ul className="divide-y divide-border/65">
                 {recentMail.data.map((email) => (
-                  <li key={email.id} className="py-3">
+                  <li key={email.id}>
                     <button
                       type="button"
                       onClick={() => onNavigate("inbox")}
-                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 text-left"
+                      className="group grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-2 py-4 text-left transition-colors hover:bg-white/[0.025] sm:px-3"
                     >
+                      <span className="flex size-9 items-center justify-center rounded-full border border-border/80 bg-white/[0.035] text-[11px] font-semibold text-muted-foreground">
+                        {getInitials(email.from || "?")}
+                      </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {email.from
-                            ? formatSender(email.from)
-                            : "Unknown sender"}
+                        <span className="block truncate text-[13px] font-semibold text-foreground">
+                          {email.from ? senderLabel(email.from) : "Unknown sender"}
                         </span>
-
-                        <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                        <span className="mt-0.5 block truncate text-xs font-medium text-foreground/85">
                           {email.subject || "(no subject)"}
                         </span>
-                      </span>
-
-                      {email.date && (
-                        <span className="text-muted-foreground text-xs">
-                          {formatMessageDate(email.date)}
+                        <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+                          {email.snippet || "No preview available"}
                         </span>
-                      )}
+                      </span>
+                      <span className="flex items-center gap-1.5 self-start pt-0.5 text-[10px] tabular-nums text-muted-foreground">
+                        {formatEmailTime(email.date)}
+                        <ArrowRight className="size-3 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
+                      </span>
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </div>
+          <div className="flex items-center justify-between border-t border-border/65 px-5 py-3 text-[10px] text-muted-foreground">
+            <span>{recentMail.data?.length ?? 0} messages shown</span>
+            <span className="inline-flex items-center gap-1.5"><StatusDot connected={isGmailConnected} loading={connections.isLoading} /> Gmail sync</span>
+          </div>
+        </Panel>
 
-        {/* Upcoming Events */}
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle>Upcoming Events</CardTitle>
-
-            <CardDescription>This week from Google Calendar.</CardDescription>
-          </CardHeader>
-
-          <CardContent>
-            {events.isLoading && <StatusLine>Loading events...</StatusLine>}
-
-            {events.error && (
-              <StatusLine tone="error">{events.error.message}</StatusLine>
-            )}
-
-            {events.data && events.data?.length === 0 && (
-              <EmptyBlock
-                title="No events this week"
-                description="Your calendar is clear in this view."
-              />
-            )}
-
-            {events.data && events.data.length > 0 && (
-              <ul className="divide-y">
-                {events.data.slice(0, 5).map((event) => (
-                  <li key={event.id} className="py-3">
-                    <button
-                      type="button"
-                      onClick={() => onNavigate("calendar")}
-                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 text-left"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {event.summary || "Untitled"}
-                        </span>
-
-                        {event.location && (
-                          <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                            {event.location}
-                          </span>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel className="overflow-hidden">
+            <PanelHeading icon={CalendarDays} title="Today's schedule" action="Open calendar" onAction={() => onNavigate("calendar")} />
+            <div className="px-4 py-2">
+              {events.isLoading && <p className="px-2 py-8 text-center text-xs text-muted-foreground">Loading your schedule…</p>}
+              {events.error && <p className="px-2 py-8 text-center text-xs text-destructive">{events.error.message}</p>}
+              {events.data && todayEvents.length === 0 && (
+                <div className="flex min-h-44 flex-col items-center justify-center text-center">
+                  <span className="mb-3 flex size-10 items-center justify-center rounded-full border border-border bg-white/[0.025] text-muted-foreground"><Check className="size-4" /></span>
+                  <p className="text-sm font-semibold">No events today</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Your schedule is clear for today.</p>
+                </div>
+              )}
+              {events.data && todayEvents.length > 0 && (
+                <ol className="relative ml-2 space-y-1 py-2 before:absolute before:top-5 before:bottom-5 before:left-[5px] before:w-px before:bg-border">
+                  {todayEvents.slice(0, 4).map((event, index) => (
+                    <li key={event.id} className="relative pl-7">
+                      <span className={cn("absolute top-[17px] left-0 z-10 size-[11px] rounded-full border-2 border-background", index === 0 ? "bg-brand" : "bg-muted-foreground/45")} />
+                      <button
+                        type="button"
+                        onClick={() => onNavigate("calendar")}
+                        className={cn(
+                          "grid w-full gap-1 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/[0.035]",
+                          index === 0 && "bg-white/[0.035]",
                         )}
-                      </span>
+                      >
+                        <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <Clock3 className="size-3" /> {formatEventWhen(event.start, event.end)}
+                        </span>
+                        <span className="truncate text-[13px] font-semibold">{event.summary || "Untitled event"}</span>
+                        {event.location && <span className="truncate text-[11px] text-muted-foreground">{event.location}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          </Panel>
 
-                      <span className="text-muted-foreground text-xs">
-                        {formatEventWhen(event.start, event.end)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          <div className="card-chai flex items-center justify-between gap-4 px-4 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/[0.07] text-brand"><Sparkles className="size-4" /></span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold">Need a hand?</p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Ask MailPoint AI to help with your day.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate("agent")}
+              className="btn-asym inline-flex h-8 shrink-0 items-center gap-1.5 border border-border/80 px-3 text-[11px] font-semibold transition-colors hover:border-brand/40 hover:text-brand"
+            >
+              Open assistant <ArrowRight className="size-3" />
+            </button>
+          </div>
+        </div>
       </section>
 
-      {/* Integrations */}
-      <Button
+      <button
         type="button"
-        variant="ghost"
-        className="text-muted-foreground w-fit"
         onClick={() => onNavigate("integrations")}
+        className="inline-flex w-fit items-center gap-2 text-[11px] text-muted-foreground transition-colors hover:text-brand"
       >
-        <RefreshCw className="size-3.5" />
-        Review integrations
-      </Button>
-    </div>
-  );
-}
-
-function StatusLine({
-  children,
-  tone = "muted",
-}: {
-  children: ReactNode;
-  tone?: "muted" | "error";
-}) {
-  return (
-    <p
-      className={cn(
-        "py-4 text-sm",
-        tone === "error" ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      {children}
-    </p>
-  );
-}
-
-function EmptyBlock({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-lg border border-dashed py-10 text-center">
-      <p className="text-sm font-medium">{title}</p>
-
-      <p className="text-muted-foreground mt-1 text-sm">{description}</p>
+        <RefreshCw className="size-3" /> Review connected services
+      </button>
     </div>
   );
 }

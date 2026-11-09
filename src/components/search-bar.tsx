@@ -118,7 +118,7 @@ export function SearchBar({
                 ? "Search emails or use from:, subject:, priority:..."
                 : "Search keywords, natural queries, or filters..."
           }
-          className="border-input bg-muted/40 text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/30 h-9 w-full rounded-lg border pr-24 pl-9 text-xs sm:text-sm focus:ring-2 focus:outline-none transition-all shadow-xs"
+          className="border-input bg-white/[0.025] text-foreground placeholder:text-muted-foreground focus:border-brand/50 focus:ring-brand/15 h-10 w-full rounded-xl border pr-24 pl-9 text-xs sm:text-sm shadow-none transition-colors focus:ring-2 focus:outline-none"
         />
 
         <div className="absolute right-2 flex items-center gap-1">
@@ -154,12 +154,12 @@ export function SearchBar({
 
       {/* Popover Menu with Syntax Guidance, Modes, and Filters */}
       {popoverOpen && (
-        <div className="bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1.5 w-full rounded-xl border shadow-lg animate-in fade-in-0 zoom-in-95 p-3">
+        <div className="card-chai bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-2 w-full p-3 shadow-none animate-in fade-in-0 zoom-in-95">
           {/* Mode Switcher */}
           <div className="border-b pb-2.5 mb-2.5">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <Sparkles className="h-3.5 w-3.5 text-brand" />
                 Search Mode
               </span>
               <span className="text-[11px] text-muted-foreground">
@@ -173,7 +173,7 @@ export function SearchBar({
                 className={cn(
                   "flex flex-col items-start rounded-md border p-1.5 text-left text-xs transition-colors",
                   mode === "hybrid"
-                    ? "border-primary/50 bg-primary/10 text-primary font-medium"
+                    ? "border-brand/35 bg-brand/[0.07] text-brand font-medium"
                     : "border-border/60 hover:bg-muted/60 text-muted-foreground",
                 )}
               >
@@ -189,7 +189,7 @@ export function SearchBar({
                 className={cn(
                   "flex flex-col items-start rounded-md border p-1.5 text-left text-xs transition-colors",
                   mode === "semantic"
-                    ? "border-primary/50 bg-primary/10 text-primary font-medium"
+                    ? "border-brand/35 bg-brand/[0.07] text-brand font-medium"
                     : "border-border/60 hover:bg-muted/60 text-muted-foreground",
                 )}
               >
@@ -205,7 +205,7 @@ export function SearchBar({
                 className={cn(
                   "flex flex-col items-start rounded-md border p-1.5 text-left text-xs transition-colors",
                   mode === "keyword"
-                    ? "border-primary/50 bg-primary/10 text-primary font-medium"
+                    ? "border-brand/35 bg-brand/[0.07] text-brand font-medium"
                     : "border-border/60 hover:bg-muted/60 text-muted-foreground",
                 )}
               >
@@ -242,7 +242,7 @@ export function SearchBar({
                   className={cn(
                     "rounded-md px-2 py-0.5 text-[11px] border transition-colors",
                     priorityFilter === p.id
-                      ? "bg-primary text-primary-foreground border-primary font-medium"
+                      ? "bg-foreground text-background border-foreground font-medium"
                       : "bg-muted/50 border-border/50 text-muted-foreground hover:bg-muted",
                   )}
                 >
@@ -255,7 +255,7 @@ export function SearchBar({
           {/* Natural Language Suggestions */}
           <div className="border-b pb-2.5 mb-2.5">
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
-              <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+              <Lightbulb className="h-3.5 w-3.5 text-brand" />
               Natural Language Queries
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -275,7 +275,7 @@ export function SearchBar({
           {/* Advanced Operators */}
           <div>
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-1.5">
-              <Tag className="h-3.5 w-3.5 text-blue-500" />
+              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
               Search Operators
             </span>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
@@ -287,7 +287,7 @@ export function SearchBar({
                   className="flex items-center justify-between rounded-md border border-border/50 hover:bg-muted px-1.5 py-1 text-[11px] text-left transition-colors"
                   title={item.desc}
                 >
-                  <code className="font-semibold text-primary">{item.operator}</code>
+                  <code className="font-semibold text-brand">{item.operator}</code>
                   <span className="text-[10px] text-muted-foreground truncate ml-1">
                     {item.desc}
                   </span>

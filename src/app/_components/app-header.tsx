@@ -9,6 +9,8 @@ import {
 } from "@/app/_components/app-sidebar";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SearchBar, type PriorityFilterOption } from "@/components/search-bar";
+import type { SearchMode } from "@/server/lib/email-search";
 
 const SECTION_TITLES: Record<AppSection, string> = {
   overview: "Overview",
@@ -19,25 +21,20 @@ const SECTION_TITLES: Record<AppSection, string> = {
   sent: "Sent",
   trash: "Trash",
   calendar: "Calendar",
-  settings: "Account",
+  settings: "Settings",
   integrations: "Integrations",
 };
 
 function initialsFor(user: SidebarUser | null) {
   const source = user?.name ?? user?.email ?? "";
-
   const initials = source
     .split(/[\s@.]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-
   return initials || "?";
 }
-
-import { SearchBar, type PriorityFilterOption } from "@/components/search-bar";
-import type { SearchMode } from "@/server/lib/email-search";
 
 interface MailSearchProps {
   value: string;
@@ -71,42 +68,28 @@ export function AppHeader({
   isAdmin: boolean;
   mailSearch?: MailSearchProps;
 }) {
-  const isMailSection =
-    section === "inbox" ||
-    section === "starred" ||
-    section === "drafts" ||
-    section === "sent" ||
-    section === "trash";
-
   return (
-    <header className="bg-background/95 flex h-14 shrink-0 items-center gap-3 border-b px-3 md:px-4">
+    <header className="border-b border-border/70 flex h-[68px] shrink-0 items-center gap-3 px-4 sm:px-6 lg:px-8">
       <button
         type="button"
         onClick={onOpenMobileSidebar}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-md md:hidden"
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
         aria-label="Open menu"
       >
-        <Menu className="h-4 w-4" />
+        <Menu className="size-4" />
       </button>
 
-      <div className="hidden min-w-0 items-baseline gap-2 sm:flex">
-        <span className="font-heading text-sm font-semibold">MailPoint</span>
-
-        <span className="text-muted-foreground">/</span>
-
-        <h1 className="text-muted-foreground truncate text-sm font-medium">
-          {SECTION_TITLES[section]}
-        </h1>
+      <div className="hidden min-w-0 items-center gap-2 text-xs sm:flex">
+        <span className="font-semibold tracking-tight text-foreground">MailPoint</span>
+        <span className="text-muted-foreground/50">/</span>
+        <h1 className="truncate text-muted-foreground">{SECTION_TITLES[section]}</h1>
       </div>
-
-      <h1 className="shrink-0 text-sm font-semibold sm:hidden">
-        {SECTION_TITLES[section]}
-      </h1>
+      <h1 className="min-w-0 truncate text-sm font-semibold sm:hidden">{SECTION_TITLES[section]}</h1>
 
       <div className="min-w-0 flex-1" />
 
-      {isMailSection && mailSearch && (
-        <div className="hidden w-full max-w-sm sm:block md:max-w-md">
+      {mailSearch && (
+        <div className="hidden w-full max-w-[430px] lg:block">
           <SearchBar
             value={mailSearch.value}
             onChange={mailSearch.onChange}
@@ -116,9 +99,11 @@ export function AppHeader({
             onModeChange={mailSearch.onModeChange}
             priorityFilter={mailSearch.priorityFilter}
             onPriorityFilterChange={mailSearch.onPriorityFilterChange}
+            className="max-w-none"
           />
         </div>
       )}
+
       <ModeToggle />
 
       <AccountMenu
@@ -130,11 +115,14 @@ export function AppHeader({
         isAdmin={isAdmin}
         triggerId="header-account-menu-trigger"
       >
-        <button type="button" className="shrink-0 rounded-full">
-          <Avatar className="h-7 w-7">
+        <button
+          type="button"
+          aria-label="Open account menu"
+          className="shrink-0 rounded-full outline-none ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <Avatar className="size-9 ring-1 ring-border">
             <AvatarImage src={user?.image ?? undefined} alt="" />
-
-            <AvatarFallback className="bg-primary/15 text-primary text-xs">
+            <AvatarFallback className="bg-muted text-xs font-semibold text-foreground">
               {initialsFor(user)}
             </AvatarFallback>
           </Avatar>

@@ -180,7 +180,7 @@ function MailPointAppInner({
   );
 
   return (
-    <div className="bg-background text-foreground flex h-screen">
+    <div className="bg-background text-foreground flex h-screen overflow-hidden">
       <AppSidebar
         activeSection={activeSection}
         onNavigate={handleNavigate}
@@ -206,26 +206,25 @@ function MailPointAppInner({
           onSettings={() => handleNavigate("settings")}
           onAdmin={handleAdminDashboard}
           isAdmin={isAdmin}
-          mailSearch={
-            activeSection === "inbox" ||
-            activeSection === "starred" ||
-            activeSection === "sent" ||
-            activeSection === "trash"
-              ? {
-                  value: mailSearchInput,
-                  onChange: setMailSearchInput,
-                  onSubmit: () => setActiveMailSearch(mailSearchInput),
-                  onClear: () => {
-                    setMailSearchInput("");
-                    setActiveMailSearch("");
-                  },
-                  mode: searchMode,
-                  onModeChange: setSearchMode,
-                  priorityFilter: searchPriorityFilter,
-                  onPriorityFilterChange: setSearchPriorityFilter,
-                }
-              : undefined
-          }
+          mailSearch={{
+            value: mailSearchInput,
+            onChange: setMailSearchInput,
+            onSubmit: () => {
+              setActiveMailSearch(mailSearchInput);
+              if (activeSection !== "inbox") {
+                setActiveSection("inbox");
+                router.push(SECTION_PATHS.inbox);
+              }
+            },
+            onClear: () => {
+              setMailSearchInput("");
+              setActiveMailSearch("");
+            },
+            mode: searchMode,
+            onModeChange: setSearchMode,
+            priorityFilter: searchPriorityFilter,
+            onPriorityFilterChange: setSearchPriorityFilter,
+          }}
         />
 
         <main

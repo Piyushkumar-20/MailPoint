@@ -1,21 +1,21 @@
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Geist, Oxanium } from "next/font/google";
+import { Manrope, Montserrat } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { TRPCReactProvider } from "@/trpc/react";
 import { PWAInstallPrompt } from "@/app/pwa-install-prompt";
 
-const geistHeading = Geist({
+const manrope = Manrope({
   subsets: ["latin"],
-  variable: "--font-heading",
+  variable: "--font-manrope-next",
 });
 
-const oxanium = Oxanium({
+const montserrat = Montserrat({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-montserrat-next",
 });
 
 export const metadata: Metadata = {
@@ -42,10 +42,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn(
-        oxanium.variable,
-        geistHeading.variable,
-      )}
+      className={cn(manrope.variable, montserrat.variable)}
     >
       <body className="font-sans antialiased">
         <ThemeProvider

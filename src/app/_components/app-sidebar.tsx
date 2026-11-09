@@ -71,6 +71,7 @@ const CALENDAR_ITEMS: NavItem[] = [
 ];
 
 const SETTINGS_ITEMS: NavItem[] = [
+  { section: "settings", label: "Settings", icon: Settings },
   { section: "integrations", label: "Integrations", icon: Mail },
 ];
 
@@ -162,7 +163,7 @@ function NavGroup({
   return (
     <div>
       {!collapsed && (
-        <p className="text-sidebar-foreground/45 px-3 pt-4 pb-1.5 text-[11px] font-semibold tracking-wider uppercase">
+        <p className="text-sidebar-foreground/40 px-3 pt-4 pb-2 text-[10px] font-bold tracking-[0.16em] uppercase">
           {label}
         </p>
       )}
@@ -177,11 +178,11 @@ function NavGroup({
               onClick={() => onNavigate(item.section)}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors",
+                "relative flex min-h-9 items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors",
                 collapsed && "justify-center px-0",
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                  ? "border-l-2 border-brand bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "border-l-2 border-transparent text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -253,22 +254,22 @@ function SidebarBody({
   }, [onFooterHeightChange, showCollapseToggle]);
 
   return (
-    <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col">
+    <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-2xl border border-sidebar-border">
       <div
         className={cn(
-          "border-sidebar-border flex h-14 shrink-0 items-center gap-2 border-b px-4",
+          "border-sidebar-border flex h-[68px] shrink-0 items-center gap-3 border-b px-5",
           collapsed && "justify-center px-0",
         )}
       >
-        <div className="bg-sidebar-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px]">
-          <Mail className="text-sidebar-primary-foreground h-3.5 w-3.5" />
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/[0.07] text-brand">
+          <Mail className="size-4" />
         </div>
         {!collapsed && (
-          <span className="font-heading text-sm font-semibold">MailPoint</span>
+          <span className="text-[15px] font-bold tracking-tight">MailPoint</span>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-4">
+      <div className="flex-1 space-y-2 overflow-y-auto px-3 pb-4 pt-3">
         <NavGroup
           label="Dashboard"
           items={DASHBOARD_ITEMS}
@@ -299,7 +300,7 @@ function SidebarBody({
         />
       </div>
 
-      <div ref={footerRef} className="border-sidebar-border shrink-0 border-t p-2">
+      <div ref={footerRef} className="border-sidebar-border shrink-0 border-t p-3">
         <AccountMenu
           user={user}
           onSignOut={onSignOut}
@@ -313,19 +314,19 @@ function SidebarBody({
           <button
             type="button"
             className={cn(
-              "hover:bg-sidebar-accent/70 flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition-colors",
+              "hover:bg-sidebar-accent/70 flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors",
               collapsed && "justify-center",
             )}
           >
-            <Avatar className="h-7 w-7 shrink-0">
+            <Avatar className="size-9 shrink-0 ring-1 ring-border">
               <AvatarImage src={user?.image ?? undefined} alt="" />
-              <AvatarFallback className="bg-sidebar-primary/15 text-sidebar-primary text-xs">
+              <AvatarFallback className="bg-brand/10 text-brand text-xs">
                 {initialsFor(user)}
               </AvatarFallback>
             </Avatar>
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium">
+                <p className="truncate text-xs font-semibold">
                   {user?.name ?? "Account"}
                 </p>
                 <p className="text-sidebar-foreground/50 truncate text-[11px]">
@@ -341,7 +342,7 @@ function SidebarBody({
             type="button"
             onClick={() => onCollapsedChange(!collapsed)}
             className={cn(
-              "text-sidebar-foreground/50 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground mt-1 flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-xs transition-colors",
+              "text-sidebar-foreground/45 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground mt-2 flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-[11px] transition-colors",
               collapsed && "justify-center",
             )}
           >
@@ -392,8 +393,8 @@ export function AppSidebar({
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "border-sidebar-border hidden shrink-0 border-r transition-[width] duration-150 md:block",
-          collapsed ? "w-[68px]" : "w-64",
+          "hidden shrink-0 py-2 pl-2 pr-1 transition-[width] duration-150 md:block",
+          collapsed ? "w-[92px]" : "w-[272px]",
         )}
       >
         <SidebarBody
@@ -413,7 +414,7 @@ export function AppSidebar({
 
       {/* Mobile drawer */}
       <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-        <SheetContent side="left" className="border-sidebar-border w-64 p-0">
+        <SheetContent side="left" className="border-sidebar-border w-[272px] p-0">
           <SidebarBody
             activeSection={activeSection}
             onNavigate={(section) => {
