@@ -333,22 +333,22 @@ export const gmailMessages = pgTable(
     index("gmail_messages_tenant_inbox_date_idx").on(
       table.tenantId,
       table.isInbox,
-      table.internalDate,
+      table.internalDate.desc(),
     ),
     index("gmail_messages_tenant_starred_date_idx").on(
       table.tenantId,
       table.isStarred,
-      table.internalDate,
+      table.internalDate.desc(),
     ),
     index("gmail_messages_tenant_sent_date_idx").on(
       table.tenantId,
       table.isSent,
-      table.internalDate,
+      table.internalDate.desc(),
     ),
     index("gmail_messages_tenant_trash_date_idx").on(
       table.tenantId,
       table.isTrash,
-      table.internalDate,
+      table.internalDate.desc(),
     ),
     // Thread grouping
     index("gmail_messages_tenant_thread_idx").on(

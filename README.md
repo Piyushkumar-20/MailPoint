@@ -20,13 +20,15 @@ The current foundation includes:
 - Better Auth
 - Email/password authentication
 - Google OAuth
-- Gmail integration through Corsair
-- Google Calendar integration through Corsair
-- tRPC API layer
-- Tailwind CSS v4
-- Environment-based configuration
+- Gmail integration through Corsair, with a PostgreSQL message index and incremental synchronization
+- Google Calendar integration through Corsair, with cached event queries and range refresh
+- MailPoint AI agent with Gmail/Calendar tools and confirmation-based calendar actions
+- Keyword and semantic email search, plus email priority classification
+- tRPC API layer and multi-tenant data isolation
+- Razorpay billing, plan entitlements, and admin dashboard
+- Tailwind CSS v4, ChaiUI styling, and PWA support
 
-Planned capabilities include AI-driven workflows, Corsair MCP integration, real-time webhooks, intelligent/semantic search, email prioritization, and keyboard-first productivity features. These should be treated as roadmap items unless implemented in the repository.
+The feature list below reflects capabilities present in this repository. External provider credentials and database migrations are still required to run the corresponding integrations.
 
 ## Why MailPoint?
 
@@ -86,102 +88,35 @@ The project includes Google Calendar integration through Corsair.
 
 Calendar functionality is part of the broader MailPoint communication workflow and is intended to work alongside Gmail rather than as an isolated calendar application.
 
-## Planned Features
+## Current Product Capabilities
 
-The project documentation defines the following future direction.
+### Gmail Workspace
 
-### AI Agent
+The Gmail workspace includes inbox, starred, drafts, sent and trash views; message search and detail rendering; compose, reply and forward flows; draft saving; message labeling and mailbox actions. Message metadata is indexed in PostgreSQL so mailbox lists can be rendered without loading every message body. The sync service supports initial and incremental synchronization.
 
-The AI agent is intended to understand natural-language communication requests and execute controlled actions through Gmail and Google Calendar.
+### Google Calendar
 
-Example:
+The calendar workspace includes agenda, month, week and day views, event search, range refresh, event creation, draft events, invitations, editing and deletion. Availability lookup is also used by meeting-planning workflows.
 
-```text
-"Schedule a meeting with Rahul tomorrow at 11 AM
-and send him a confirmation email."
-```
+### MailPoint AI and MCP
 
-Potential workflow:
+The AI agent accepts natural-language requests and can coordinate Gmail and Google Calendar tools through the Corsair MCP integration. Calendar actions use a confirmation flow before committing supported changes.
 
-```text
-User Request
-     |
-  AI Agent
-     |
- Corsair / Tools
-   /        \
-Gmail      Calendar
-   \        /
-    Workflow
-       |
-     Result
-```
+### Search and Email Intelligence
 
-### Corsair MCP
+The application combines mailbox keyword search with semantic-search functionality and priority classification. AI provider keys are required for the corresponding AI-powered features.
 
-The planned architecture uses Corsair MCP as an action layer for AI-driven Gmail and Calendar operations.
+### Billing and Administration
 
-The goal is to allow the AI agent to perform multi-step workflows instead of only generating text.
+The repository includes Free/Pro plan entitlements, AI usage limits, Razorpay order/payment handling, webhook verification and an admin dashboard.
 
-Sensitive actions should be subject to appropriate confirmation and authorization controls.
+### PWA
 
-### Real-Time Updates
+The application includes a service worker, offline fallback page and install prompt for supported browsers.
 
-The project roadmap includes Corsair webhooks for reacting to Gmail and Calendar changes without relying entirely on polling.
+## Future Improvements
 
-```text
-Gmail / Calendar
-       |
-    Corsair
-       |
-    Webhook
-       |
-   MailPoint
-       |
-       UI
-```
-
-Ngrok is planned for local webhook development.
-
-### Intelligent Search
-
-The roadmap includes combining traditional keyword search with semantic/vector search.
-
-```text
-User Query
-    |
- +--+-----------+
- |              |
-Keyword       Semantic
-Search         Search
- |              |
- +------+-------+
-        |
- Relevant Results
-```
-
-The planned semantic-search architecture uses vector embeddings with PostgreSQL.
-
-### Email Intelligence
-
-Planned email intelligence includes:
-
-- LLM-based email priority
-- Priority categories
-- Important-email detection
-- Priority UI
-
-### Keyboard-First Productivity
-
-Planned productivity improvements include:
-
-- Keyboard shortcuts
-- Quick compose
-- Quick search
-- Quick calendar actions
-- AI shortcuts
-- Command-style actions
-- UI performance improvements
+The roadmap can continue to focus on deeper keyboard-first productivity, richer recurring-event controls, broader synchronization observability, and additional workflow automation. These are future enhancements, not prerequisites for the features listed above.
 
 ## Technology Stack
 
@@ -381,22 +316,25 @@ pnpm install
 
 ### 2. Configure environment variables
 
-Create a local `.env` file containing the credentials required by the application.
+Copy `.env.example` to `.env` and provide the credentials required by the features you use.
 
-Do not commit secrets to Git.
+Do not commit `.env` or production secrets to Git. The current environment schema requires the database and Razorpay billing credentials at build/runtime. Google OAuth and Corsair credentials are required for Gmail and Calendar integrations; Groq and Gemini keys enable their respective AI/search features.
 
-The authentication configuration uses values for:
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` | Better Auth application URL and session secret |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth for Gmail and Calendar |
+| `CORSAIR_KEK` | Corsair encryption key |
+| `CORSAIR_DEV_API_KEY`, `CORSAIR_DEV_SIGNING_SECRET` | Corsair development credentials |
+| `CORSAIR_PROD_API_KEY`, `CORSAIR_PROD_SIGNING_SECRET` | Optional production Corsair credentials; these take precedence when set |
+| `GROQ_API_KEY` | MailPoint AI agent and email intelligence |
+| `GEMINI_API_KEY` | Semantic email search |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay order creation and payment verification |
+| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook signature verification |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Public Razorpay checkout key |
 
-```text
-BETTER_AUTH_URL
-BETTER_AUTH_SECRET
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-```
-
-The application also requires its database and Google/Corsair configuration according to the current environment configuration.
-
-Use the repository's environment-validation/configuration code as the authoritative source for the complete list of variables.
+The checked-in `.env.example` lists the variables expected by the current application. Keep the development and production credentials separate.
 
 ### 3. Database
 

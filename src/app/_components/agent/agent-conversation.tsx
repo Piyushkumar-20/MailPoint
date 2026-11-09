@@ -43,8 +43,8 @@ export function AgentConversation({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         {messages.map((message) => (
           <AgentMessage
             key={message.id}

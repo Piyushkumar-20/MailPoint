@@ -69,7 +69,7 @@ export function AppHeader({
   mailSearch?: MailSearchProps;
 }) {
   return (
-    <header className="border-b border-border/70 flex h-[68px] shrink-0 items-center gap-3 px-4 sm:px-6 lg:px-8">
+    <header className="flex h-[68px] shrink-0 items-center gap-3 border-b border-border/70 px-4 sm:px-6 lg:px-8">
       <button
         type="button"
         onClick={onOpenMobileSidebar}

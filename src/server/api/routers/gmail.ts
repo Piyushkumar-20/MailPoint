@@ -14,6 +14,7 @@ import { db } from "@/server/db";
 import { gmailMessages, gmailSyncState } from "@/server/db/schema";
 import {
   triggerBackgroundSync,
+  syncMailboxNow,
   upsertGmailMessage,
   updateMessageLabels,
   deleteLocalMessage,
@@ -267,17 +268,23 @@ export const gmailRouter = createTRPCRouter({
       lastSyncedAt: state?.lastSyncedAt ?? null,
       lastError: state?.lastError ?? null,
       initialSyncCompletedAt: state?.initialSyncCompletedAt ?? null,
+      updatedAt: state?.updatedAt ?? null,
     };
   }),
 
   triggerSync: protectedProcedure.mutation(async ({ ctx }) => {
     const tenantId = await getTenantId(ctx.session.user.id);
     const tenant = await getTenant(ctx.session.user.id);
-    triggerBackgroundSync(tenantId, tenant as Parameters<typeof triggerBackgroundSync>[1], db);
-    const state = await db.query.gmailSyncState.findFirst({
-      where: eq(gmailSyncState.tenantId, tenantId),
-    });
-    return { status: state?.status ?? "syncing" };
+    const state = await syncMailboxNow(
+      tenantId,
+      tenant as Parameters<typeof syncMailboxNow>[1],
+      db,
+    );
+    return {
+      status: state.status,
+      lastSyncedAt: state.lastSyncedAt,
+      synced: state.status === "synced",
+    };
   }),
 
   searchEmails: protectedProcedure

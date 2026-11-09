@@ -200,7 +200,6 @@ function SidebarBody({
   onNavigate,
   collapsed,
   onCollapsedChange,
-  onFooterHeightChange,
   user,
   onSignOut,
   isSigningOut,
@@ -212,7 +211,6 @@ function SidebarBody({
   onNavigate: (section: AppSection) => void;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  onFooterHeightChange?: (height: number) => void;
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
@@ -220,41 +218,8 @@ function SidebarBody({
   isAdmin: boolean;
   showCollapseToggle: boolean;
 }) {
-  const footerRef = React.useRef<HTMLDivElement>(null);
-
-  React.useLayoutEffect(() => {
-    if (!showCollapseToggle || !onFooterHeightChange) return;
-
-    const footer = footerRef.current;
-
-    if (!footer) return;
-
-    const updateFooterHeight = () => {
-      const height = Math.ceil(footer.getBoundingClientRect().height);
-
-      if (height > 0) {
-        onFooterHeightChange(height);
-      }
-    };
-
-    updateFooterHeight();
-
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(updateFooterHeight);
-
-    resizeObserver?.observe(footer);
-    window.addEventListener("resize", updateFooterHeight);
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", updateFooterHeight);
-    };
-  }, [onFooterHeightChange, showCollapseToggle]);
-
   return (
-    <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-2xl border border-sidebar-border">
+    <div className="bg-sidebar text-sidebar-foreground flex h-full min-h-0 flex-col overflow-hidden border-r border-sidebar-border">
       <div
         className={cn(
           "border-sidebar-border flex h-[68px] shrink-0 items-center gap-3 border-b px-5",
@@ -269,7 +234,7 @@ function SidebarBody({
         )}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 pb-4 pt-3">
+      <div className="scrollbar-none min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-4 pt-3">
         <NavGroup
           label="Dashboard"
           items={DASHBOARD_ITEMS}
@@ -300,7 +265,7 @@ function SidebarBody({
         />
       </div>
 
-      <div ref={footerRef} className="border-sidebar-border shrink-0 border-t p-3">
+      <div className="border-sidebar-border mt-auto shrink-0 border-t px-3 py-3">
         <AccountMenu
           user={user}
           onSignOut={onSignOut}
@@ -366,7 +331,6 @@ export function AppSidebar({
   onNavigate,
   collapsed,
   onCollapsedChange,
-  onDesktopFooterHeightChange,
   user,
   onSignOut,
   isSigningOut,
@@ -379,7 +343,6 @@ export function AppSidebar({
   onNavigate: (section: AppSection) => void;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
-  onDesktopFooterHeightChange?: (height: number) => void;
   user: SidebarUser | null;
   onSignOut: () => void;
   isSigningOut: boolean;
@@ -393,8 +356,8 @@ export function AppSidebar({
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden shrink-0 py-2 pl-2 pr-1 transition-[width] duration-150 md:block",
-          collapsed ? "w-[92px]" : "w-[272px]",
+          "hidden h-screen shrink-0 transition-[width] duration-200 md:block",
+          collapsed ? "w-[84px]" : "w-[264px]",
         )}
       >
         <SidebarBody
@@ -402,7 +365,6 @@ export function AppSidebar({
           onNavigate={onNavigate}
           collapsed={collapsed}
           onCollapsedChange={onCollapsedChange}
-          onFooterHeightChange={onDesktopFooterHeightChange}
           user={user}
           onSignOut={onSignOut}
           isSigningOut={isSigningOut}
@@ -423,7 +385,6 @@ export function AppSidebar({
             }}
             collapsed={false}
             onCollapsedChange={() => undefined}
-            onFooterHeightChange={undefined}
             user={user}
             onSignOut={onSignOut}
             isSigningOut={isSigningOut}

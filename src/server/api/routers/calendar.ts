@@ -509,12 +509,15 @@ export const calendarRouter = createTRPCRouter({
   createDraft: protectedProcedure
     .input(
       z.object({
-        summary: z.string().min(1),
+        summary: z.string().trim().min(1),
         description: z.string().optional(),
         location: z.string().optional(),
         start: z.string().datetime(),
         end: z.string().datetime(),
-        attendees: z.array(z.string().email()).optional(),
+        attendees: z.array(z.string().trim().email()).optional(),
+      }).refine(({ start, end }) => new Date(end).getTime() > new Date(start).getTime(), {
+        message: "Event end must be later than its start.",
+        path: ["end"],
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -549,12 +552,15 @@ export const calendarRouter = createTRPCRouter({
   sendInvite: protectedProcedure
     .input(
       z.object({
-        summary: z.string().min(1),
+        summary: z.string().trim().min(1),
         description: z.string().optional(),
         location: z.string().optional(),
         start: z.string().datetime(),
         end: z.string().datetime(),
-        attendees: z.array(z.string().email()).min(1),
+        attendees: z.array(z.string().trim().email()).min(1),
+      }).refine(({ start, end }) => new Date(end).getTime() > new Date(start).getTime(), {
+        message: "Event end must be later than its start.",
+        path: ["end"],
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -589,12 +595,15 @@ export const calendarRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string().min(1),
-        summary: z.string().min(1),
+        summary: z.string().trim().min(1),
         description: z.string().optional(),
         location: z.string().optional(),
         start: z.string().datetime(),
         end: z.string().datetime(),
-        attendees: z.array(z.string().email()).optional(),
+        attendees: z.array(z.string().trim().email()).optional(),
+      }).refine(({ start, end }) => new Date(end).getTime() > new Date(start).getTime(), {
+        message: "Event end must be later than its start.",
+        path: ["end"],
       }),
     )
     .mutation(async ({ ctx, input }) => {

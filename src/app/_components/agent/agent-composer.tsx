@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Paperclip, Send } from "lucide-react";
+import { Mic, MicOff, Send } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -196,7 +196,7 @@ export function AgentComposer({
 
   return (
     <form
-      className="mx-auto w-full max-w-3xl px-3 pb-3 sm:pb-4"
+      className="mx-auto w-full max-w-3xl px-4 pb-4 sm:px-6 sm:pb-5"
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) onSubmit();
@@ -206,18 +206,7 @@ export function AgentComposer({
         Ask MailPoint anything
       </label>
 
-      <div className="border-border/80 bg-card/90 focus-within:border-primary/40 focus-within:ring-primary/20 flex items-center gap-2.5 rounded-2xl border px-3 py-2 shadow-sm backdrop-blur-md transition-all focus-within:ring-2 sm:px-4 sm:py-2.5 dark:border-white/10 dark:bg-[#11161d]/90">
-        <button
-          type="button"
-          className="text-muted-foreground hover:bg-muted hover:text-foreground flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors select-none"
-          aria-label="Attach file"
-          title="Attach file (coming soon)"
-          disabled={disabled}
-        >
-          <Paperclip className="size-4" />
-        </button>
-
-        <div className="bg-border/60 h-4 w-px shrink-0" aria-hidden="true" />
+      <div className="flex items-end gap-2 rounded-[1.35rem] border border-border bg-card px-4 py-3 transition-colors focus-within:border-brand/45 focus-within:ring-2 focus-within:ring-brand/10 sm:px-5 sm:py-3.5">
 
         <textarea
           ref={textareaRef}
@@ -234,7 +223,7 @@ export function AgentComposer({
           rows={1}
           placeholder="Ask MailPoint anything..."
           className={cn(
-            "text-foreground max-h-36 min-h-6 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm leading-5 outline-none",
+            "text-foreground max-h-36 min-h-7 flex-1 resize-none overflow-y-auto bg-transparent px-0 py-1 text-sm leading-6 outline-none",
             "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60",
           )}
         />
@@ -247,7 +236,7 @@ export function AgentComposer({
             setVoiceLanguage(event.target.value as "en-US" | "hi-IN")
           }
           disabled={isListening || disabled}
-          className="bg-muted/60 text-muted-foreground h-8 max-w-[76px] shrink-0 rounded-md border-0 px-1 text-xs outline-none"
+          className="h-8 max-w-[68px] shrink-0 rounded-lg border border-border bg-muted/50 px-2 text-xs text-muted-foreground outline-none"
         >
           <option value="en-US">EN</option>
           <option value="hi-IN">HI</option>
@@ -262,7 +251,7 @@ export function AgentComposer({
           aria-label={isListening ? "Stop voice input" : "Start voice input"}
           title={isListening ? "Stop listening" : "Speak to MailPoint"}
           className={cn(
-            "size-8 shrink-0 rounded-full",
+            "size-8 shrink-0 rounded-lg",
             isListening && "animate-pulse text-red-500",
           )}
         >
@@ -273,20 +262,13 @@ export function AgentComposer({
           )}
         </Button>
 
-        <span className="text-muted-foreground/70 mr-0.5 hidden shrink-0 items-center gap-1.5 text-xs select-none sm:inline-flex">
-          Press
-          <kbd className="border-border/80 bg-muted/60 text-muted-foreground rounded border px-1.5 py-0.5 text-[10px] font-semibold">
-            Enter
-          </kbd>
-          to send
-        </span>
 
         <Button
           type="submit"
           size="icon"
           disabled={!canSend}
           aria-label="Send message"
-          className="bg-primary text-primary-foreground hover:bg-primary/90 size-8 shrink-0 rounded-full shadow-xs transition-all disabled:opacity-30"
+          className="btn-asym size-9 shrink-0 rounded-xl bg-brand text-white transition-colors hover:brightness-95 disabled:opacity-35"
         >
           <Send className="size-3.5" />
         </Button>

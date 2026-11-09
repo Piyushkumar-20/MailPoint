@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { EmailRenderer } from "@/app/_components/email-renderer";
 
-import { formatMessageDate, formatSender } from "@/lib/display";
+import { formatMessageDate, formatSender, parseEmailAddress } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Button } from "@/components/ui/button";
@@ -412,24 +412,84 @@ export function GmailPanel({
   const syncStatusQuery = api.gmail.getSyncStatus.useQuery(undefined, {
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "syncing" || status === "initial_sync_required"
+      return status === "syncing" ||
+        status === "initial_sync_required" ||
+        status === "full_sync_required"
         ? 3000
-        : 60000;
+        : 30000;
     },
   });
 
   const triggerSync = api.gmail.triggerSync.useMutation({
     onSuccess: async () => {
+      await Promise.all([
+        utils.gmail.getSyncStatus.invalidate(),
+        utils.gmail.searchEmails.invalidate(),
+      ]);
+    },
+    onError: async () => {
       await utils.gmail.getSyncStatus.invalidate();
-      await utils.gmail.searchEmails.invalidate();
     },
   });
 
+  const lastAutomaticSyncAttempt = useRef(0);
+  const syncStatus = syncStatusQuery.data;
+
+  // Re-check periodically instead of using a one-shot ref. The previous
+  // autoSyncRequested flag stayed true forever, preventing later 5-minute
+  // incremental syncs for as long as the inbox remained mounted.
+  useEffect(() => {
+    const maybeSyncMailbox = () => {
+      if (!syncStatus) return;
+
+      const now = Date.now();
+      const syncAgeMs = syncStatus.lastSyncedAt
+        ? now - new Date(syncStatus.lastSyncedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      const statusAgeMs = syncStatus.updatedAt
+        ? now - new Date(syncStatus.updatedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+
+      const syncIsDue =
+        syncStatus.status === "initial_sync_required" ||
+        syncStatus.status === "full_sync_required" ||
+        (syncStatus.status === "synced" && syncAgeMs >= 5 * 60_000) ||
+        (syncStatus.status === "syncing" && statusAgeMs >= 10 * 60_000) ||
+        (syncStatus.status === "sync_error" && statusAgeMs >= 5 * 60_000);
+
+      if (
+        !syncIsDue ||
+        triggerSync.isPending ||
+        now - lastAutomaticSyncAttempt.current < 5 * 60_000
+      ) {
+        return;
+      }
+
+      lastAutomaticSyncAttempt.current = now;
+      triggerSync.mutate();
+    };
+
+    maybeSyncMailbox();
+    const interval = window.setInterval(maybeSyncMailbox, 30_000);
+    return () => window.clearInterval(interval);
+  }, [
+    syncStatus?.status,
+    syncStatus?.lastSyncedAt,
+    syncStatus?.updatedAt,
+    triggerSync.isPending,
+    triggerSync.mutate,
+  ]);
+
   const refreshInbox = api.gmail.triggerSync.useMutation({
     onSuccess: async () => {
+      await Promise.all([
+        utils.gmail.getSyncStatus.invalidate(),
+        utils.gmail.searchEmails.invalidate(),
+        utils.gmail.listDrafts.invalidate(),
+      ]);
+    },
+    onError: async () => {
       await utils.gmail.getSyncStatus.invalidate();
-      await utils.gmail.searchEmails.invalidate();
-      await utils.gmail.listDrafts.invalidate();
     },
   });
 
@@ -1196,9 +1256,7 @@ export function GmailPanel({
                 )}
               />
 
-              <span className="hidden sm:inline">
-                {refreshInbox.isPending ? "Refreshing" : "Refresh"}
-              </span>
+              <span>Refresh</span>
             </Button>
 
             <Button
@@ -1216,18 +1274,19 @@ export function GmailPanel({
         </div>
 
         {(syncStatusQuery.data?.status === "syncing" ||
-          syncStatusQuery.data?.status === "initial_sync_required") && (
+          syncStatusQuery.data?.status === "initial_sync_required" ||
+          syncStatusQuery.data?.status === "full_sync_required") && (
           <div className="bg-primary/10 text-primary flex items-center justify-between border-b px-4 py-2 text-xs">
             <span className="flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Syncing your mailbox with Gmail in the background...
+              Syncing your mailbox with Gmail...
             </span>
           </div>
         )}
 
         {syncStatusQuery.data?.status === "sync_error" && (
           <div className="bg-destructive/10 text-destructive flex items-center justify-between border-b px-4 py-2 text-xs">
-            <span>
+            <span className="min-w-0 truncate">
               Sync error:{" "}
               {syncStatusQuery.data.lastError ?? "Failed to sync with Gmail."}
             </span>
@@ -1235,7 +1294,7 @@ export function GmailPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-xs"
+              className="h-6 shrink-0 px-2 text-xs"
               onClick={() => triggerSync.mutate()}
               disabled={triggerSync.isPending}
             >
@@ -1243,6 +1302,22 @@ export function GmailPanel({
             </Button>
           </div>
         )}
+
+        {syncStatusQuery.data?.status === "synced" &&
+          syncStatusQuery.data.lastSyncedAt && (
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-1.5 text-[11px] text-muted-foreground">
+              <span>Mailbox is up to date</span>
+              <span>
+                Last synced{" "}
+                {new Date(syncStatusQuery.data.lastSyncedAt).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+          )}
 
         {view === "trash" && !selectedId && (
           <div className="bg-muted/40 flex items-center justify-between gap-3 border-b px-4 py-2.5 text-xs">
@@ -1744,6 +1819,7 @@ function MailList({
     y: number;
     emailId: string;
   } | null>(null);
+  const [inboxTab, setInboxTab] = useState<"all" | "unread" | "starred">("all");
 
   const isTrashView = view === "trash";
 
@@ -1783,15 +1859,32 @@ function MailList({
     );
   }
 
+  const unreadCount = emails.filter((email) =>
+    email.labelIds.includes("UNREAD"),
+  ).length;
+  const starredCount = emails.filter((email) =>
+    email.labelIds.includes("STARRED"),
+  ).length;
+  const displayEmails =
+    view === "inbox"
+      ? emails.filter((email) => {
+          if (inboxTab === "unread") return email.labelIds.includes("UNREAD");
+          if (inboxTab === "starred") return email.labelIds.includes("STARRED");
+          return true;
+        })
+      : emails;
+
   const contextEmail = contextMenu
-    ? emails.find((email) => email.id === contextMenu.emailId)
+    ? displayEmails.find((email) => email.id === contextMenu.emailId)
     : undefined;
 
-  const allSelected = emails.length > 0 && selectedIds.length === emails.length;
+  const allSelected =
+    displayEmails.length > 0 &&
+    displayEmails.every((email) => selectedIds.includes(email.id));
 
   const hasSelection = selectedIds.length > 0;
 
-  const selectedEmails = emails.filter((email) =>
+  const selectedEmails = displayEmails.filter((email) =>
     selectedIds.includes(email.id),
   );
 
@@ -1809,7 +1902,7 @@ function MailList({
       return;
     }
 
-    onSelectionChange(emails.map((email) => email.id));
+    onSelectionChange(displayEmails.map((email) => email.id));
   };
 
   const toggleSelection = (messageId: string) => {
@@ -1823,6 +1916,102 @@ function MailList({
 
   return (
     <>
+      {view === "inbox" && (
+        <div className="px-4 pt-4 pb-3 sm:px-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => {
+                setInboxTab("all");
+                onSelectionChange([]);
+              }}
+              aria-pressed={inboxTab === "all"}
+              className={cn(
+                "group flex min-w-0 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+                inboxTab === "all"
+                  ? "border-primary/50 bg-primary/[0.07]"
+                  : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/50",
+                "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+              )}
+            >
+              <span className="bg-primary/10 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+                <Mail className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0">
+                <span className="text-muted-foreground block text-xs font-medium">Messages in view</span>
+                <span className="text-foreground mt-0.5 block text-xl leading-none font-semibold tabular-nums">
+                  {emails.length}
+                </span>
+                <span className="text-muted-foreground mt-1 block text-[11px]">View all messages</span>
+              </span>
+              <span className="text-muted-foreground ml-auto text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                View
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setInboxTab("unread");
+                onSelectionChange([]);
+              }}
+              aria-pressed={inboxTab === "unread"}
+              className={cn(
+                "group flex min-w-0 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+                inboxTab === "unread"
+                  ? "border-primary/50 bg-primary/[0.07]"
+                  : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/50",
+                "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+              )}
+            >
+              <span className="bg-primary/10 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+                <MailOpen className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0">
+                <span className="text-muted-foreground block text-xs font-medium">Unread messages</span>
+                <span className="text-foreground mt-0.5 block text-xl leading-none font-semibold tabular-nums">
+                  {unreadCount}
+                </span>
+                <span className="text-muted-foreground mt-1 block text-[11px]">View unread messages</span>
+              </span>
+              <span className="text-muted-foreground ml-auto text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                View
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setInboxTab("starred");
+                onSelectionChange([]);
+              }}
+              aria-pressed={inboxTab === "starred"}
+              className={cn(
+                "group flex min-w-0 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors",
+                inboxTab === "starred"
+                  ? "border-primary/50 bg-primary/[0.07]"
+                  : "border-border/80 bg-card hover:border-primary/40 hover:bg-muted/50",
+                "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+              )}
+            >
+              <span className="bg-primary/10 text-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
+                <Star className="h-[18px] w-[18px]" />
+              </span>
+              <span className="min-w-0">
+                <span className="text-muted-foreground block text-xs font-medium">Starred messages</span>
+                <span className="text-foreground mt-0.5 block text-xl leading-none font-semibold tabular-nums">
+                  {starredCount}
+                </span>
+                <span className="text-muted-foreground mt-1 block text-[11px]">View starred messages</span>
+              </span>
+              <span className="text-muted-foreground ml-auto text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                View
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-background sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b px-4 py-2">
         <input
           type="checkbox"
@@ -2019,12 +2208,7 @@ function MailList({
             <span
               className={cn(
                 "rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase",
-                searchInfo.mode === "hybrid" &&
-                  "border-purple-500/30 bg-purple-500/15 text-purple-600 dark:text-purple-400",
-                searchInfo.mode === "semantic" &&
-                  "border-blue-500/30 bg-blue-500/15 text-blue-600 dark:text-blue-400",
-                searchInfo.mode === "keyword" &&
-                  "border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+                "border-primary/25 bg-primary/10 text-primary",
               )}
             >
               {searchInfo.mode} search
@@ -2047,11 +2231,31 @@ function MailList({
         </div>
       )}
 
+      {displayEmails.length === 0 ? (
+        <EmptyPanel
+          title={inboxTab === "unread" ? "You're all caught up" : "No starred messages"}
+          description={
+            inboxTab === "unread"
+              ? "There are no unread messages in the loaded inbox."
+              : "Star an email to keep it close at hand."
+          }
+        />
+      ) : (
       <ul>
-        {emails.map((email, index) => {
+        {displayEmails.map((email, index) => {
           const isUnread = email.labelIds.includes("UNREAD");
           const isSelected = selectedIds.includes(email.id);
           const isFocused = !selectedId && index === focusedIndex;
+          const senderDetails = parseEmailAddress(email.from.split(",")[0] ?? "");
+          const senderName = senderDetails.name || senderDetails.email || "Unknown sender";
+          const senderInitials = senderName
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join("")
+            .toUpperCase();
+          const isStarred = email.labelIds.includes("STARRED");
           const cls = classifications?.[email.id];
           const priorityLevel: PriorityType = cls
             ? (cls.priority as PriorityType)
@@ -2083,15 +2287,15 @@ function MailList({
             >
               <div
                 className={cn(
-                  "group hover:bg-muted/60 grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 px-4 py-3 text-left transition-colors",
-                  isUnread && "bg-muted/40",
+                  "group hover:bg-muted/50 grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-3.5 text-left transition-colors sm:px-5",
+                  isUnread && "bg-primary/[0.035]",
                   isSelected && "bg-accent/60",
                   selectedId === email.id && "bg-accent",
                   isFocused && "ring-primary/50 bg-accent/20 ring-2 ring-inset",
-                  isUrgent && "border-l-3 border-l-rose-500",
+                  isUrgent && "border-l-2 border-l-rose-500/70",
                 )}
               >
-                <div className="flex items-start pt-0.5">
+                <div className="flex items-center">
                   <input
                     type="checkbox"
                     checked={isSelected}
@@ -2102,75 +2306,78 @@ function MailList({
                   />
                 </div>
 
+                <div
+                  className={cn(
+                    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
+                    isUnread
+                      ? "border-primary/20 bg-primary/10 text-primary"
+                      : "border-border bg-muted/70 text-muted-foreground",
+                  )}
+                  aria-hidden="true"
+                >
+                  {senderInitials || "?"}
+                  {isUnread && (
+                    <span className="bg-primary absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-2 ring-background" />
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={() => onSelect(email.id)}
-                  className="min-w-0 text-left"
+                  className="min-w-0 space-y-1 text-left"
+                  title={email.from}
                 >
-                  <span className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={cn(
-                          "truncate text-sm",
-                          isUnread
-                            ? "text-foreground font-semibold"
-                            : "text-foreground font-normal",
-                        )}
-                      >
-                        {email.from
-                          ? formatSender(email.from)
-                          : "Unknown sender"}
-                      </span>
-
-                      <PriorityBadge
-                        priority={priorityLevel}
-                        confidence={cls?.confidence}
-                        reason={cls?.reason}
-                        category={cls?.category}
-                        size="sm"
-                      />
-
-                      {email.matchOrigin && (
-                        <span
-                          className={cn(
-                            "py-0.2 rounded border px-1.5 text-[10px] font-medium capitalize",
-                            email.matchOrigin === "hybrid" &&
-                              "border-purple-500/20 bg-purple-500/10 text-purple-600 dark:text-purple-400",
-                            email.matchOrigin === "semantic" &&
-                              "border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400",
-                            email.matchOrigin === "keyword" &&
-                              "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                          )}
-                        >
-                          {email.matchOrigin} match
-                        </span>
-                      )}
-                    </div>
-
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <span
                       className={cn(
-                        "mt-0.5 block truncate text-sm",
+                        "truncate text-[13px]",
                         isUnread
                           ? "text-foreground font-semibold"
-                          : "text-muted-foreground font-normal",
+                          : "text-foreground/90 font-medium",
                       )}
                     >
-                      {email.subject || "(no subject)"}
+                      {senderName}
                     </span>
-
-                    {email.snippet && (
-                      <span className="text-muted-foreground mt-0.5 block truncate text-xs">
-                        {email.snippet}
+                    <PriorityBadge
+                      priority={priorityLevel}
+                      confidence={cls?.confidence}
+                      reason={cls?.reason}
+                      category={cls?.category}
+                      size="sm"
+                    />
+                    {email.matchOrigin && (
+                      <span
+                        className={cn(
+                          "rounded border px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                          "border-border bg-muted/70 text-muted-foreground",
+                        )}
+                      >
+                        {email.matchOrigin} match
                       </span>
                     )}
                   </span>
+                  <span
+                    className={cn(
+                      "block truncate text-[13px] leading-5",
+                      isUnread
+                        ? "text-foreground font-semibold"
+                        : "text-foreground/85 font-medium",
+                    )}
+                  >
+                    {email.subject || "(no subject)"}
+                  </span>
+                  {email.snippet && (
+                    <span className="text-muted-foreground block truncate text-xs leading-4">
+                      {email.snippet}
+                    </span>
+                  )}
                 </button>
 
-                <div className="flex shrink-0 items-start gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   {email.date && (
                     <span
                       className={cn(
-                        "mr-1 pt-0.5 text-xs",
+                        "mr-1 hidden whitespace-nowrap text-[11px] sm:inline",
                         isUnread
                           ? "text-foreground font-semibold"
                           : "text-muted-foreground",
@@ -2215,21 +2422,42 @@ function MailList({
                       </Button>
                     </>
                   ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-destructive h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                      aria-label="Delete email"
-                      title="Delete email"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDelete(email.id);
-                      }}
-                      disabled={isDeleting}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-8 w-8 transition-opacity sm:opacity-0 sm:group-hover:opacity-100",
+                          isStarred
+                            ? "text-primary opacity-100"
+                            : "text-muted-foreground hover:text-primary",
+                        )}
+                        aria-label={isStarred ? "Unstar email" : "Star email"}
+                        title={isStarred ? "Unstar email" : "Star email"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleStar(email);
+                        }}
+                      >
+                        <Star className={cn("h-4 w-4", isStarred && "fill-current")} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive h-8 w-8 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                        aria-label="Delete email"
+                        title="Delete email"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(email.id);
+                        }}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -2237,6 +2465,7 @@ function MailList({
           );
         })}
       </ul>
+      )}
 
       {contextEmail && contextMenu && (
         <div
@@ -2965,7 +3194,7 @@ function ScheduleMeetingDialog({
                   type="date"
                   value={date}
                   onChange={(e) => onDateChange(e.target.value)}
-                  className="composer-input"
+                  className="composer-input h-9 rounded-lg border border-input bg-background/70 px-3 focus-visible:ring-2 focus-visible:ring-ring/30"
                 />
               </label>
               <label className="space-y-1.5">
@@ -3202,10 +3431,10 @@ function EmailComposer({
   return (
     <section
       className={cn(
-        "bg-popover text-popover-foreground fixed z-40 flex max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-lg border shadow-2xl",
+        "bg-card text-card-foreground fixed z-40 flex max-h-[min(88vh,58rem)] flex-col overflow-hidden rounded-2xl border border-border/80 shadow-[0_24px_80px_-28px_rgba(0,0,0,0.55)]",
         expanded
-          ? "inset-4 md:inset-x-[10vw] md:inset-y-8"
-          : "right-3 bottom-3 left-3 sm:left-auto sm:w-[38rem]",
+          ? "inset-3 md:inset-x-[12vw] md:inset-y-6"
+          : "right-4 bottom-4 left-4 sm:left-auto sm:w-[min(44rem,calc(100vw-2rem))]",
       )}
       aria-label={title}
     >
@@ -3217,8 +3446,8 @@ function EmailComposer({
         onDiscard={onDiscard}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b px-4 py-2">
+      <div className="flex min-h-0 flex-1 flex-col bg-background/35">
+        <div className="border-b border-border/70 bg-card/70 px-5 py-3">
           <RecipientField
             value={to}
             onChange={onToChange}
@@ -3230,7 +3459,7 @@ function EmailComposer({
         </div>
 
         {ccVisible && (
-          <div className="border-b px-4 py-2">
+          <div className="border-b border-border/70 bg-card/70 px-5 py-2.5">
             <ComposerAddressField
               label="Cc"
               value={cc}
@@ -3241,7 +3470,7 @@ function EmailComposer({
         )}
 
         {bccVisible && (
-          <div className="border-b px-4 py-2">
+          <div className="border-b border-border/70 bg-card/70 px-5 py-2.5">
             <ComposerAddressField
               label="Bcc"
               value={bcc}
@@ -3251,7 +3480,7 @@ function EmailComposer({
           </div>
         )}
 
-        <div className="border-b px-4 py-2">
+        <div className="border-b border-border/70 bg-card/70 px-5 py-3">
           <SubjectField value={subject} onChange={onSubjectChange} />
         </div>
 
@@ -3307,8 +3536,11 @@ function ComposerHeader({
   onDiscard: () => void;
 }) {
   return (
-    <div className="bg-muted/60 flex h-10 shrink-0 items-center justify-between gap-3 border-b px-3">
-      <h3 className="truncate text-sm font-semibold">{title}</h3>
+    <div className="flex min-h-[4.5rem] shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-card px-5 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-highlight"><MailPlus className="size-5" /></span>
+        <div className="min-w-0"><h3 className="truncate text-sm font-semibold">{title}</h3><p className="mt-0.5 text-xs text-muted-foreground">Compose and organize your message</p></div>
+      </div>
 
       <div className="flex items-center gap-1">
         <IconButton label="Minimize" onClick={onMinimize}>
@@ -3344,14 +3576,14 @@ function RecipientField({
   showBccButton: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-2">
+    <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3">
       <span className="text-muted-foreground text-xs font-medium">To</span>
       <Input
         type="email"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="name@example.com"
-        className="composer-input"
+        className="composer-input h-9 rounded-lg border border-input bg-background/70 px-3 focus-visible:ring-2 focus-visible:ring-ring/30"
       />
 
       <div className="flex items-center gap-1">
@@ -3392,14 +3624,14 @@ function ComposerAddressField({
   type?: "email" | "text";
 }) {
   return (
-    <label className="grid grid-cols-[2.5rem_1fr] items-center gap-2">
+    <label className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3">
       <span className="text-muted-foreground text-xs font-medium">{label}</span>
       <Input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="composer-input"
+        className="composer-input h-9 rounded-lg border border-input bg-background/70 px-3 focus-visible:ring-2 focus-visible:ring-ring/30"
       />
     </label>
   );
@@ -3418,7 +3650,7 @@ function SubjectField({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="Subject"
-      className="composer-input font-medium"
+      className="composer-input h-10 rounded-lg border border-input bg-background/70 px-3 font-medium focus-visible:ring-2 focus-visible:ring-ring/30"
     />
   );
 }
@@ -3442,7 +3674,7 @@ function MessageEditor({
   }, [value]);
 
   return (
-    <div className="relative min-h-72 flex-1 overflow-y-auto px-4 py-3">
+    <div className="relative m-4 min-h-72 flex-1 overflow-y-auto rounded-xl border border-border/70 bg-card px-5 py-4">
       {!value && (
         <p className="text-muted-foreground pointer-events-none absolute text-sm">
           {placeholder}
@@ -3457,7 +3689,7 @@ function MessageEditor({
         onInput={(event) => {
           onChange(event.currentTarget.innerText);
         }}
-        className="min-h-64 text-sm leading-6 whitespace-pre-wrap outline-none"
+        className="min-h-64 text-sm leading-7 whitespace-pre-wrap outline-none"
       />
     </div>
   );
@@ -3525,7 +3757,7 @@ function ComposerToolbar({
   };
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t px-3 py-2">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/80 bg-card px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <Button
           type="button"

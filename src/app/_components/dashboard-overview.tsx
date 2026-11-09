@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -109,6 +109,14 @@ export function DashboardOverview({
 }) {
   const week = getWeekBounds(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const updateTime = () => setCurrentTime(new Date());
+    updateTime();
+    const interval = window.setInterval(updateTime, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const connections = api.gmail.checkConnection.useQuery(undefined, {
     refetchOnMount: "always",
@@ -119,6 +127,31 @@ export function DashboardOverview({
     { query: "", mailbox: "inbox", limit: 5, offset: 0 },
     { staleTime: 0, refetchOnMount: "always", refetchInterval: 60_000 },
   );
+
+  // This is the authoritative Gmail sync state from gmail_sync_state.
+  // React Query cache timestamps only tell us when the UI fetched data.
+  const gmailSyncStatus = api.gmail.getSyncStatus.useQuery(undefined, {
+    refetchOnMount: "always",
+    refetchInterval: (query) =>
+      query.state.data?.status === "syncing" ||
+      query.state.data?.status === "initial_sync_required" ||
+      query.state.data?.status === "full_sync_required"
+        ? 3_000
+        : 30_000,
+  });
+  const utils = api.useUtils();
+  const gmailSync = api.gmail.triggerSync.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.gmail.getSyncStatus.invalidate(),
+        utils.gmail.searchEmails.invalidate(),
+      ]);
+    },
+    onError: async () => {
+      await utils.gmail.getSyncStatus.invalidate();
+    },
+  });
+  const lastAutomaticSyncAttempt = useRef(0);
 
   const events = api.calendar.searchEvents.useQuery(
     {
@@ -136,6 +169,17 @@ export function DashboardOverview({
   const isGmailConnected = gmailState === "connected";
   const isCalendarConnected = calendarState === "connected";
   const greetingName = userName?.trim().split(/\s+/)[0] || "there";
+  const hour = currentTime?.getHours();
+  const greeting =
+    hour === undefined
+      ? "Hello"
+      : hour >= 5 && hour < 12
+        ? "Good morning"
+        : hour >= 12 && hour < 17
+          ? "Good afternoon"
+          : hour >= 17 && hour < 21
+            ? "Good evening"
+            : "Good night";
 
   const { upcomingEvents, todayEvents } = useMemo(() => {
     const now = Date.now();
@@ -154,18 +198,67 @@ export function DashboardOverview({
   }, [events.data]);
 
   const nextEvent = upcomingEvents[0];
-  const lastSyncedAt = Math.max(
-    connections.dataUpdatedAt,
-    recentMail.dataUpdatedAt,
-    events.dataUpdatedAt,
-  );
+  const lastSyncedAt = gmailSyncStatus.data?.lastSyncedAt
+    ? new Date(gmailSyncStatus.data.lastSyncedAt)
+    : null;
   const isRefreshing =
-    isSyncing || connections.isFetching || recentMail.isFetching || events.isFetching;
+    isSyncing ||
+    gmailSync.isPending ||
+    connections.isFetching ||
+    recentMail.isFetching ||
+    events.isFetching;
+
+  // Keep the Gmail index fresh while the dashboard is open. The server
+  // mutation performs the real Gmail API sync; refetching searchEmails alone
+  // would only read the existing PostgreSQL index.
+  useEffect(() => {
+    const maybeSyncMailbox = () => {
+      const state = gmailSyncStatus.data;
+      if (!state || !isGmailConnected || gmailSync.isPending) return;
+
+      const now = Date.now();
+      const lastSyncAge = state.lastSyncedAt
+        ? now - new Date(state.lastSyncedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+      const stateAge = state.updatedAt
+        ? now - new Date(state.updatedAt).getTime()
+        : Number.POSITIVE_INFINITY;
+
+      const due =
+        state.status === "initial_sync_required" ||
+        state.status === "full_sync_required" ||
+        (state.status === "synced" && lastSyncAge >= 5 * 60_000) ||
+        (state.status === "syncing" && stateAge >= 2 * 60_000) ||
+        (state.status === "sync_error" && stateAge >= 5 * 60_000);
+
+      if (!due || now - lastAutomaticSyncAttempt.current < 5 * 60_000) return;
+
+      lastAutomaticSyncAttempt.current = now;
+      void gmailSync.mutateAsync().catch(() => {
+        // The authoritative failure and message are persisted in sync state.
+      });
+    };
+
+    maybeSyncMailbox();
+    const interval = window.setInterval(maybeSyncMailbox, 30_000);
+    return () => window.clearInterval(interval);
+  }, [
+    gmailSyncStatus.data,
+    gmailSync.isPending,
+    gmailSync.mutateAsync,
+    isGmailConnected,
+  ]);
 
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      await Promise.all([connections.refetch(), recentMail.refetch(), events.refetch()]);
+      if (isGmailConnected) await gmailSync.mutateAsync();
+      await Promise.all([
+        connections.refetch(),
+        recentMail.refetch(),
+        events.refetch(),
+        gmailSyncStatus.refetch(),
+      ]);
     } finally {
       setIsSyncing(false);
     }
@@ -176,10 +269,10 @@ export function DashboardOverview({
       <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div className="min-w-0">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+            {currentTime?.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) ?? ""}
           </p>
           <h1 className="text-[clamp(1.8rem,3vw,2.55rem)] font-semibold leading-[1.08] tracking-[-0.055em]">
-            Good morning, <span className="highlight">{greetingName}</span>
+            {greeting}, <span className="highlight">{greetingName}</span>
           </h1>
           <p className="mt-2 text-sm text-muted-foreground sm:text-[15px]">
             Your email and calendar, in one workspace.
@@ -187,11 +280,26 @@ export function DashboardOverview({
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
-          {lastSyncedAt > 0 && (
-            <span className="hidden text-[11px] text-muted-foreground sm:block">
-              Synced {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+          {gmailSyncStatus.data?.status === "sync_error" ? (
+            <span
+              className="hidden max-w-56 truncate text-[11px] text-destructive sm:block"
+              title={gmailSyncStatus.data.lastError ?? "Gmail synchronization failed"}
+            >
+              Gmail sync issue
             </span>
-          )}
+          ) : lastSyncedAt && !Number.isNaN(lastSyncedAt.getTime()) ? (
+            <span className="hidden text-[11px] text-muted-foreground sm:block">
+              Last synced{" "}
+              {lastSyncedAt.toLocaleDateString() === new Date().toLocaleDateString()
+                ? lastSyncedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                : lastSyncedAt.toLocaleString([], {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+            </span>
+          ) : null}
           <button
             type="button"
             onClick={handleSync}

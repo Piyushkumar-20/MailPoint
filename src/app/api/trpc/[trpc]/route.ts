@@ -9,6 +9,10 @@ import { createTRPCContext } from "@/server/api/trpc";
  * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
  * handling a HTTP request (e.g. when you make requests from Client Components).
  */
+// Gmail initial synchronization is awaited by the protected tRPC mutation.
+// Keep enough execution time for bounded first-page/full-sync work on Vercel.
+export const maxDuration = 60;
+
 const createContext = async (req: NextRequest) => {
   return createTRPCContext({
     headers: req.headers,

@@ -789,7 +789,50 @@ export async function cacheMessageBody(
  *   - A BullMQ / pg-boss background worker
  * …without any changes to the caller interface.
  */
-const activeSyncs = new Set<string>();
+const activeSyncs = new Map<string, Promise<void>>();
+
+/**
+ * Run a mailbox sync inside the current request so serverless runtimes do not
+ * terminate the work immediately after returning a response. The caller can
+ * refresh the local mailbox index as soon as this promise resolves.
+ */
+export async function syncMailboxNow(
+  tenantId: string,
+  tenant: TenantGmail,
+  db: Db = appDb,
+): Promise<SyncState> {
+  // Coalesce concurrent requests for the same tenant. A dashboard refresh and
+  // inbox auto-sync can happen at the same time; both callers should await the
+  // same Gmail API run rather than starting two consecutive full/incremental
+  // syncs against the same history cursor.
+  const runningTask = activeSyncs.get(tenantId);
+  if (runningTask) {
+    await runningTask;
+    return getOrInitSyncState(tenantId, db);
+  }
+
+  const task = (async () => {
+    const state = await getOrInitSyncState(tenantId, db);
+
+    if (
+      !state.historyId ||
+      state.status === "initial_sync_required" ||
+      state.status === "full_sync_required"
+    ) {
+      await performFullSync(tenantId, tenant, db);
+    } else {
+      await performIncrementalSync(tenantId, tenant, db);
+    }
+  })();
+
+  activeSyncs.set(tenantId, task);
+  try {
+    await task;
+    return await getOrInitSyncState(tenantId, db);
+  } finally {
+    if (activeSyncs.get(tenantId) === task) activeSyncs.delete(tenantId);
+  }
+}
 
 export function triggerBackgroundSync(
   tenantId: string,
@@ -802,9 +845,8 @@ export function triggerBackgroundSync(
     );
     return;
   }
-  activeSyncs.add(tenantId);
 
-  void (async () => {
+  const task = (async () => {
     try {
       const state = await getOrInitSyncState(tenantId, db);
 
@@ -835,10 +877,13 @@ export function triggerBackgroundSync(
         `[GmailSync] triggerBackgroundSync uncaught error for tenant ${tenantId}:`,
         err,
       );
-    } finally {
-      activeSyncs.delete(tenantId);
     }
   })();
+
+  activeSyncs.set(tenantId, task);
+  void task.finally(() => {
+    if (activeSyncs.get(tenantId) === task) activeSyncs.delete(tenantId);
+  });
 }
 
 // ---------------------------------------------------------------------------

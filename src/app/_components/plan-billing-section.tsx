@@ -211,7 +211,7 @@ function ProSubscriptionSummary({
   endsAt: Date | null;
 }) {
   return (
-    <div className="bg-muted/50 rounded-lg border p-3 text-xs space-y-1.5">
+    <div className="space-y-1.5 rounded-lg border border-border/70 bg-muted/35 p-3 text-xs">
       <div className="flex items-center gap-1.5 font-medium text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
         Active subscription
@@ -330,7 +330,7 @@ export function PlanBillingSection({
           name: user?.name ?? undefined,
           email: user?.email ?? undefined,
         },
-        theme: { color: "#2563eb" },
+        theme: { color: "#C47A2C" },
 
         handler: (response) => {
           void (async () => {
@@ -404,10 +404,10 @@ export function PlanBillingSection({
   if (isLoading) {
     return (
       <section aria-labelledby="plan-billing-heading">
-        <h2 id="plan-billing-heading" className="font-heading text-2xl font-semibold">
+        <h2 id="plan-billing-heading" className="font-heading text-lg font-semibold tracking-tight">
           Plan &amp; Billing
         </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
+        <p className="mt-0.5 text-sm text-muted-foreground">
           Choose the MailPoint plan that fits your workflow.
         </p>
         <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
@@ -431,24 +431,24 @@ export function PlanBillingSection({
 
   return (
     <section aria-labelledby="plan-billing-heading">
-      <h2 id="plan-billing-heading" className="font-heading text-2xl font-semibold">
+      <h2 id="plan-billing-heading" className="font-heading text-lg font-semibold tracking-tight">
         Plan &amp; Billing
       </h2>
-      <p className="text-muted-foreground mt-1 text-sm">
+      <p className="mt-0.5 text-sm text-muted-foreground">
         Choose the MailPoint plan that fits your workflow.
       </p>
 
       {/* Plan cards — side-by-side on md+, stacked on mobile */}
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* ── Free card ── */}
         <Card
           className={cn(
-            "relative flex flex-col",
-            !isPro && "ring-2 ring-primary",
+            "relative flex flex-col overflow-hidden border-[var(--card-edge)] bg-[var(--card-fill)] shadow-none",
+            !isPro && "border-brand/45 ring-1 ring-brand/20",
           )}
           aria-label="Free plan"
         >
-          <CardHeader>
+          <CardHeader className="gap-2 p-4 sm:p-5">
             <div className="flex items-center justify-between gap-2">
               <CardTitle>Free</CardTitle>
               {!isPro && (
@@ -476,7 +476,7 @@ export function PlanBillingSection({
             </p>
           </CardHeader>
 
-          <CardContent className="flex-1">
+          <CardContent className="flex-1 px-4 pb-4 sm:px-5 sm:pb-5">
             <ul className="space-y-0.5" aria-label="Free plan features">
               {freeFeatures.map((f, i) => (
                 <FeatureRow key={i} feature={f} />
@@ -484,7 +484,7 @@ export function PlanBillingSection({
             </ul>
           </CardContent>
 
-          <CardFooter>
+          <CardFooter className="border-t border-border/70 bg-muted/15 px-4 py-3 sm:px-5">
             <Button
               type="button"
               variant="outline"
@@ -501,12 +501,12 @@ export function PlanBillingSection({
         {/* ── Pro card ── */}
         <Card
           className={cn(
-            "relative flex flex-col",
-            isPro && "ring-2 ring-primary",
+            "relative flex flex-col overflow-hidden border-[var(--card-edge)] bg-[var(--card-fill)] shadow-none",
+            isPro && "border-brand/45 ring-1 ring-brand/20",
           )}
           aria-label="MailPoint Pro plan"
         >
-          <CardHeader>
+          <CardHeader className="gap-2 p-4 sm:p-5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="text-primary h-4 w-4 shrink-0" aria-hidden="true" />
@@ -539,7 +539,7 @@ export function PlanBillingSection({
             </p>
           </CardHeader>
 
-          <CardContent className="flex-1 space-y-4">
+          <CardContent className="flex-1 space-y-4 px-4 pb-4 sm:px-5 sm:pb-5">
             <ul className="space-y-0.5" aria-label="Pro plan features">
               {proFeatures.map((f, i) => (
                 <FeatureRow key={i} feature={f} />
@@ -555,7 +555,7 @@ export function PlanBillingSection({
             )}
           </CardContent>
 
-          <CardFooter className="flex-col items-stretch gap-3">
+          <CardFooter className="flex-col items-stretch gap-3 border-t border-border/70 bg-muted/15 px-4 py-3 sm:px-5">
             {!isPro ? (
               <Button
                 type="button"
@@ -607,11 +607,11 @@ export function PlanBillingSection({
 
       {/* AI usage comparison callout */}
       {freePlan && (
-        <div className="bg-muted/40 border-border mt-4 rounded-lg border p-4">
+        <div className="mt-3 rounded-xl border border-[var(--card-edge)] bg-[var(--card-fill)] p-4">
           <h3 className="text-sm font-medium">AI usage</h3>
-          <div className="mt-2 grid grid-cols-2 gap-4 text-sm">
+          <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 sm:gap-5">
             <div>
-              <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
                 Free
               </p>
               <p className="mt-0.5">
@@ -621,10 +621,10 @@ export function PlanBillingSection({
               </p>
             </div>
             <div>
-              <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
                 Pro
               </p>
-              <p className="mt-0.5 font-medium">
+              <p className="mt-1 font-medium">
                 Unlimited
               </p>
             </div>

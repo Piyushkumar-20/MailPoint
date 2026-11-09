@@ -61,10 +61,6 @@ function MailPointAppInner({
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [sidebarFooterHeight, setSidebarFooterHeight] = useState<number | null>(
-    null,
-  );
-
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -180,13 +176,12 @@ function MailPointAppInner({
   );
 
   return (
-    <div className="bg-background text-foreground flex h-screen overflow-hidden">
+    <div className="bg-background text-foreground flex h-dvh min-h-0 w-full overflow-hidden">
       <AppSidebar
         activeSection={activeSection}
         onNavigate={handleNavigate}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
-        onDesktopFooterHeightChange={setSidebarFooterHeight}
         user={user}
         onSignOut={handleSignOut}
         isSigningOut={isSigningOut}
@@ -196,7 +191,7 @@ function MailPointAppInner({
         onMobileOpenChange={setMobileSidebarOpen}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <AppHeader
           section={activeSection}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
@@ -241,7 +236,7 @@ function MailPointAppInner({
           )}
 
           {activeSection === "agent" && (
-            <AgentPanel footerMinHeight={sidebarFooterHeight} />
+            <AgentPanel />
           )}
 
           {(activeSection === "inbox" ||
@@ -269,7 +264,7 @@ function MailPointAppInner({
 
           {(activeSection === "settings" ||
             activeSection === "integrations") && (
-            <IntegrationsPanel user={user} />
+            <IntegrationsPanel user={user} section={activeSection === "integrations" ? "integrations" : "settings"} />
           )}
         </main>
       </div>

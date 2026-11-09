@@ -96,7 +96,6 @@
 @theme inline {
   --font-sans: var(--font-manrope-next);
   --font-manrope: var(--font-manrope-next);
-  --font-montserrat: var(--font-montserrat-next);
   --font-heading: var(--font-manrope-next);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
@@ -135,7 +134,7 @@
 
 @utility highlight {
   color: var(--highlight);
-  font-family: var(--font-montserrat);
+  font-family: var(--font-manrope-next);
   font-weight: 600;
   letter-spacing: -0.025em;
 }
@@ -195,4 +194,14 @@
     box-shadow: 0 0 0 1000px var(--popover) inset;
     transition: background-color 999999s ease-in-out 0s;
   }
+}
+
+
+/* Keep navigation scrollable without exposing browser-native scrollbars. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

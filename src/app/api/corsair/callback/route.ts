@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 import { processOAuthCallback } from "corsair/oauth";
 
 import { corsair } from "@/server/corsair";
-import { db } from "@/server/db";
-import { triggerBackgroundSync } from "@/server/lib/gmail-sync";
 
 export async function GET(request: Request) {
   try {
@@ -48,15 +46,9 @@ export async function GET(request: Request) {
       redirectUri,
     });
 
-    // Start initial sync once when Gmail connects successfully
-    if (result.plugin === "gmail" && result.tenantId) {
-      const tenant = corsair.withTenant(result.tenantId);
-      triggerBackgroundSync(
-        result.tenantId,
-        tenant as Parameters<typeof triggerBackgroundSync>[1],
-        db,
-      );
-    }
+    // The authenticated MailPoint inbox starts and awaits its initial sync.
+    // Avoid fire-and-forget work here because serverless runtimes may stop it
+    // as soon as this OAuth redirect response is sent.
 
     const redirectUrl = new URL("/settings/integrations", request.url);
 

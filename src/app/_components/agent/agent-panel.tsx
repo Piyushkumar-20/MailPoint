@@ -69,11 +69,7 @@ function saveMessages(msgs: Message[]) {
   }
 }
 
-export function AgentPanel({
-  footerMinHeight,
-}: {
-  footerMinHeight?: number | null;
-}) {
+export function AgentPanel() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [composerValue, setComposerValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -284,7 +280,7 @@ export function AgentPanel({
   };
 
   return (
-    <section className="bg-background flex h-full min-h-0 flex-col">
+    <section className="flex h-full min-h-0 flex-col bg-background">
       <AgentHeader
         hasMessages={messages.length > 0}
         isLoading={isLoading}
@@ -300,8 +296,7 @@ export function AgentPanel({
       />
 
       <div
-        className="bg-background/95 border-border/60 border-t pt-2.5 backdrop-blur-md"
-        style={footerMinHeight ? { minBlockSize: footerMinHeight } : undefined}
+        className="border-t border-border/70 bg-background pt-3"
       >
         <AgentComposer
           value={composerValue}

@@ -1,7 +1,7 @@
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
-import { Manrope, Montserrat } from "next/font/google";
+import { Manrope } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
@@ -13,10 +13,6 @@ const manrope = Manrope({
   variable: "--font-manrope-next",
 });
 
-const montserrat = Montserrat({
-  subsets: ["latin"],
-  variable: "--font-montserrat-next",
-});
 
 export const metadata: Metadata = {
   title: "MailPoint",
@@ -42,7 +38,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn(manrope.variable, montserrat.variable)}
+      className={cn(manrope.variable)}
     >
       <body className="font-sans antialiased">
         <ThemeProvider

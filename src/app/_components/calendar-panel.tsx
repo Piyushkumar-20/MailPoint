@@ -3,6 +3,9 @@
 import {
   CalendarDays,
   CalendarPlus,
+  Clock3,
+  MapPin,
+  Users,
   ChevronLeft,
   ChevronRight,
   Grid2X2,
@@ -52,6 +55,18 @@ function toDatetimeLocalValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate(),
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function getDefaultEventRange() {
+  const start = new Date();
+  start.setMinutes(0, 0, 0);
+  const end = new Date(start);
+  end.setHours(end.getHours() + 1);
+
+  return {
+    start: toDatetimeLocalValue(start),
+    end: toDatetimeLocalValue(end),
+  };
 }
 
 function toDatetimeLocalFromIso(value: string) {
@@ -215,17 +230,15 @@ export function CalendarPanel({
     [activeView, anchorDate],
   );
 
-  const defaultStart = new Date();
-  defaultStart.setMinutes(0, 0, 0);
-  const defaultEnd = new Date(defaultStart);
-  defaultEnd.setHours(defaultEnd.getHours() + 1);
+  const [defaultRange] = useState(getDefaultEventRange);
 
   const [summary, setSummary] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
-  const [start, setStart] = useState(toDatetimeLocalValue(defaultStart));
-  const [end, setEnd] = useState(toDatetimeLocalValue(defaultEnd));
+  const [start, setStart] = useState(defaultRange.start);
+  const [end, setEnd] = useState(defaultRange.end);
   const [attendees, setAttendees] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (focusCreateSignal > 0) setCreateOpen(true);
@@ -252,6 +265,38 @@ export function CalendarPanel({
       await utils.calendar.searchEvents.invalidate();
     },
   });
+
+  const autoRefreshedRange = useRef<string | null>(null);
+  const rangeKey = `${range.start.toISOString()}|${range.end.toISOString()}`;
+
+  useEffect(() => {
+    if (
+      events.isLoading ||
+      events.isFetching ||
+      events.error ||
+      refreshEvents.isPending ||
+      autoRefreshedRange.current === rangeKey
+    ) {
+      return;
+    }
+
+    autoRefreshedRange.current = rangeKey;
+    refreshEvents.mutate({
+      start: range.start.toISOString(),
+      end: range.end.toISOString(),
+      timeZone,
+    });
+  }, [
+    events.isLoading,
+    events.isFetching,
+    events.error,
+    refreshEvents.isPending,
+    refreshEvents.mutate,
+    rangeKey,
+    range.start,
+    range.end,
+    timeZone,
+  ]);
 
   const createDraft = api.calendar.createDraft.useMutation({
     onSuccess: async () => {
@@ -302,10 +347,14 @@ export function CalendarPanel({
   });
 
   function resetForm() {
+    const nextRange = getDefaultEventRange();
     setSummary("");
     setDescription("");
     setLocation("");
+    setStart(nextRange.start);
+    setEnd(nextRange.end);
     setAttendees("");
+    setFormError(null);
   }
 
   function parseAttendees() {
@@ -316,7 +365,8 @@ export function CalendarPanel({
   }
 
   function toIso(datetimeLocal: string) {
-    return new Date(datetimeLocal).toISOString();
+    const date = new Date(datetimeLocal);
+    return Number.isNaN(date.getTime()) ? "" : date.toISOString();
   }
 
   function handleMoveEvent(event: NormalizedCalendarEvent, target: Date) {
@@ -352,13 +402,47 @@ export function CalendarPanel({
   }
 
   const eventInput = {
-    summary,
-    description: description || undefined,
-    location: location || undefined,
+    summary: summary.trim(),
+    description: description.trim() || undefined,
+    location: location.trim() || undefined,
     start: toIso(start),
     end: toIso(end),
     attendees: parseAttendees(),
   };
+
+  function validateCreateForm(requireAttendees: boolean) {
+    if (!summary.trim()) return "Add an event title to continue.";
+    if (!start || !end) return "Choose a start and end date/time.";
+
+    const startTime = new Date(start).getTime();
+    const endTime = new Date(end).getTime();
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+      return "Enter valid start and end date/times.";
+    }
+    if (endTime <= startTime) {
+      return "The end time must be later than the start time.";
+    }
+
+    const emailAddresses = parseAttendees();
+    const invalidAddress = emailAddresses.find(
+      (email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+    );
+    if (invalidAddress) return `Check this email address: ${invalidAddress}`;
+    if (requireAttendees && emailAddresses.length === 0) {
+      return "Add at least one guest to send an invitation.";
+    }
+
+    return null;
+  }
+
+  function submitCreateForm(mode: "draft" | "invite") {
+    const error = validateCreateForm(mode === "invite");
+    setFormError(error);
+    if (error) return;
+
+    if (mode === "draft") createDraft.mutate(eventInput);
+    else sendInvite.mutate(eventInput);
+  }
 
   function openEditEvent(event: NormalizedCalendarEvent) {
     if (event.start.type === "allDay" || event.end.type === "allDay") return;
@@ -628,83 +712,167 @@ export function CalendarPanel({
         </section>
       </div>
 
-      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent className="w-full sm:max-w-xl">
-          <SheetHeader className="border-b">
-            <SheetTitle>Create event</SheetTitle>
-          </SheetHeader>
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4">
-            <Input
-              type="text"
-              value={summary}
-              onChange={(event) => setSummary(event.target.value)}
-              placeholder="Title"
-              autoFocus
-            />
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Description"
-              rows={4}
-              className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3"
-            />
-            <Input
-              type="text"
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              placeholder="Location"
-            />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
-                Start
-                <Input
-                  type="datetime-local"
-                  value={start}
-                  onChange={(event) => setStart(event.target.value)}
-                />
-              </label>
-              <label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium">
-                End
-                <Input
-                  type="datetime-local"
-                  value={end}
-                  onChange={(event) => setEnd(event.target.value)}
-                />
-              </label>
+      <Sheet
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setFormError(null);
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="inset-y-3 right-3 h-[calc(100dvh-1.5rem)] w-[min(44rem,calc(100vw-1.5rem))] max-w-none gap-0 overflow-hidden rounded-2xl border border-border/80 bg-card p-0 shadow-[0_24px_80px_-28px_rgba(0,0,0,0.65)] sm:max-w-none"
+        >
+          <SheetHeader className="shrink-0 border-b border-border/80 bg-card px-5 py-4 pr-14 sm:px-6">
+            <div className="flex items-center gap-3">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-highlight">
+                <CalendarPlus className="size-5" />
+              </span>
+              <div className="min-w-0 text-left">
+                <SheetTitle className="text-base font-semibold">Create event</SheetTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Add the details and invite people to your event.
+                </p>
+              </div>
             </div>
-            <Input
-              type="text"
-              value={attendees}
-              onChange={(event) => setAttendees(event.target.value)}
-              placeholder="Attendees (comma-separated)"
-            />
-            {(createDraft.error ?? sendInvite.error) && (
-              <p className="text-destructive text-sm">
-                {(createDraft.error ?? sendInvite.error)?.message}
+          </SheetHeader>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-background/35 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
+            <section className="space-y-4 rounded-xl border border-border/80 bg-card p-4 sm:p-5">
+              <div>
+                <p className="text-sm font-semibold">Event details</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Give your event a name and a little context.
+                </p>
+              </div>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Event title</span>
+                <Input
+                  type="text"
+                  value={summary}
+                  onChange={(event) => {
+                    setSummary(event.target.value);
+                    setFormError(null);
+                  }}
+                  placeholder="e.g. Project planning meeting"
+                  autoFocus
+                  className="h-11 rounded-lg bg-background"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Description</span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Add an agenda, notes or useful context..."
+                  rows={4}
+                  className="border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 min-h-28 w-full resize-y rounded-lg border bg-background px-3 py-2.5 text-sm outline-none focus-visible:ring-3"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Location or meeting link</span>
+                <div className="relative">
+                  <MapPin className="absolute top-3 left-3 size-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Add a room, address or meeting link"
+                    className="h-11 bg-background pl-9"
+                  />
+                </div>
+              </label>
+            </section>
+
+            <section className="space-y-4 rounded-xl border border-border/80 bg-card p-4 sm:p-5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-brand/10 text-highlight">
+                  <Clock3 className="size-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Date and time</p>
+                  <p className="text-xs text-muted-foreground">Choose when the event starts and ends.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                  Start
+                  <Input
+                    type="datetime-local"
+                    className="h-11 min-w-0 bg-background"
+                    value={start}
+                    onChange={(event) => {
+                      setStart(event.target.value);
+                      setFormError(null);
+                    }}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                  End
+                  <Input
+                    type="datetime-local"
+                    className="h-11 min-w-0 bg-background"
+                    value={end}
+                    onChange={(event) => {
+                      setEnd(event.target.value);
+                      setFormError(null);
+                    }}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="space-y-4 rounded-xl border border-border/80 bg-card p-4 sm:p-5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-brand/10 text-highlight">
+                  <Users className="size-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Guests</p>
+                  <p className="text-xs text-muted-foreground">Invite people using their email addresses.</p>
+                </div>
+              </div>
+              <Input
+                type="text"
+                value={attendees}
+                onChange={(event) => {
+                  setAttendees(event.target.value);
+                  setFormError(null);
+                }}
+                placeholder="name@example.com, colleague@example.com"
+                className="h-11 bg-background"
+              />
+              <p className="text-[11px] text-muted-foreground">Separate multiple guests with commas.</p>
+            </section>
+
+            {(formError || createDraft.error || sendInvite.error) && (
+              <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {formError ?? createDraft.error?.message ?? sendInvite.error?.message}
               </p>
             )}
           </div>
-          <SheetFooter className="border-t sm:flex-row sm:justify-between">
+
+          <SheetFooter className="mt-0 shrink-0 flex-row items-center justify-between gap-2 border-t border-border/80 bg-card px-4 py-3 sm:px-6 sm:py-4">
             <Button
               type="button"
               variant="outline"
-              onClick={() => createDraft.mutate(eventInput)}
-              disabled={createDraft.isPending || !summary || !start || !end}
+              onClick={() => submitCreateForm("draft")}
+              disabled={createDraft.isPending || sendInvite.isPending}
+              className="h-10 px-4"
             >
-              {createDraft.isPending ? "Saving" : "Save draft"}
+              {createDraft.isPending ? "Saving..." : "Save draft"}
             </Button>
             <Button
               type="button"
-              onClick={() => sendInvite.mutate(eventInput)}
-              disabled={
-                sendInvite.isPending ||
-                !summary ||
-                !start ||
-                !end ||
-                parseAttendees().length === 0
-              }
+              onClick={() => submitCreateForm("invite")}
+              disabled={createDraft.isPending || sendInvite.isPending}
+              className="h-10 gap-2 bg-highlight px-5 text-white hover:bg-highlight/90"
             >
-              {sendInvite.isPending ? "Sending" : "Send invite"}
+              <CalendarPlus className="size-4" />
+              {sendInvite.isPending ? "Sending..." : "Send invite"}
             </Button>
           </SheetFooter>
         </SheetContent>
