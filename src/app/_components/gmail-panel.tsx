@@ -431,53 +431,58 @@ export function GmailPanel({
       await utils.gmail.getSyncStatus.invalidate();
     },
   });
+  const triggerSyncPending = triggerSync.isPending;
+  const triggerSyncMutate = triggerSync.mutate;
 
   const lastAutomaticSyncAttempt = useRef(0);
   const syncStatus = syncStatusQuery.data;
+  const syncStatusValue = syncStatus?.status;
+  const syncLastSyncedAt = syncStatus?.lastSyncedAt;
+  const syncStatusUpdatedAt = syncStatus?.updatedAt;
 
   // Re-check periodically instead of using a one-shot ref. The previous
   // autoSyncRequested flag stayed true forever, preventing later 5-minute
   // incremental syncs for as long as the inbox remained mounted.
   useEffect(() => {
     const maybeSyncMailbox = () => {
-      if (!syncStatus) return;
+      if (!syncStatusValue) return;
 
       const now = Date.now();
-      const syncAgeMs = syncStatus.lastSyncedAt
-        ? now - new Date(syncStatus.lastSyncedAt).getTime()
+      const syncAgeMs = syncLastSyncedAt
+        ? now - new Date(syncLastSyncedAt).getTime()
         : Number.POSITIVE_INFINITY;
-      const statusAgeMs = syncStatus.updatedAt
-        ? now - new Date(syncStatus.updatedAt).getTime()
+      const statusAgeMs = syncStatusUpdatedAt
+        ? now - new Date(syncStatusUpdatedAt).getTime()
         : Number.POSITIVE_INFINITY;
 
       const syncIsDue =
-        syncStatus.status === "initial_sync_required" ||
-        syncStatus.status === "full_sync_required" ||
-        (syncStatus.status === "synced" && syncAgeMs >= 5 * 60_000) ||
-        (syncStatus.status === "syncing" && statusAgeMs >= 10 * 60_000) ||
-        (syncStatus.status === "sync_error" && statusAgeMs >= 5 * 60_000);
+        syncStatusValue === "initial_sync_required" ||
+        syncStatusValue === "full_sync_required" ||
+        (syncStatusValue === "synced" && syncAgeMs >= 5 * 60_000) ||
+        (syncStatusValue === "syncing" && statusAgeMs >= 10 * 60_000) ||
+        (syncStatusValue === "sync_error" && statusAgeMs >= 5 * 60_000);
 
       if (
         !syncIsDue ||
-        triggerSync.isPending ||
+        triggerSyncPending ||
         now - lastAutomaticSyncAttempt.current < 5 * 60_000
       ) {
         return;
       }
 
       lastAutomaticSyncAttempt.current = now;
-      triggerSync.mutate();
+      triggerSyncMutate();
     };
 
     maybeSyncMailbox();
     const interval = window.setInterval(maybeSyncMailbox, 30_000);
     return () => window.clearInterval(interval);
   }, [
-    syncStatus?.status,
-    syncStatus?.lastSyncedAt,
-    syncStatus?.updatedAt,
-    triggerSync.isPending,
-    triggerSync.mutate,
+    syncStatusValue,
+    syncLastSyncedAt,
+    syncStatusUpdatedAt,
+    triggerSyncPending,
+    triggerSyncMutate,
   ]);
 
   const refreshInbox = api.gmail.triggerSync.useMutation({

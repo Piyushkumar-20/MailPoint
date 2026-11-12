@@ -263,7 +263,7 @@ export function IntegrationsPanel({
         <Card className="overflow-hidden border-[var(--card-edge)] bg-[var(--card-fill)] shadow-none">
           <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/10 text-base font-semibold text-highlight">
-              {(user?.name?.trim()?.[0] || user?.email?.trim()?.[0] || "M").toUpperCase()}
+              {(user?.name?.trim()?.[0] ?? user?.email?.trim()?.[0] ?? "M").toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{user?.name ?? "MailPoint user"}</p>

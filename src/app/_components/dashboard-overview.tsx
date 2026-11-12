@@ -20,14 +20,17 @@ import { api } from "@/trpc/react";
 type NavigateTarget = "inbox" | "calendar" | "agent" | "integrations";
 
 function senderLabel(sender: string) {
-  const firstSender = sender.split(",")[0]?.trim() || sender;
+  const firstSender = sender.split(",").map((part) => part.trim()).find(Boolean) ?? sender;
   const match = /^\s*(.*?)\s*<[^>]+>\s*$/.exec(firstSender);
-  return (match?.[1] || firstSender).replace(/^"|"$/g, "").trim();
+  const displayName = [match?.[1], firstSender].find(
+    (label): label is string => Boolean(label),
+  );
+  return (displayName ?? firstSender).replace(/^"|"$/g, "").trim();
 }
 
 function getInitials(sender: string) {
   const clean = sender.replace(/<[^>]+>/g, "").trim();
-  const name = clean.includes("@") ? clean.split("@")[0] : clean;
+  const name = clean.includes("@") ? (clean.split("@")[0] ?? clean) : clean;
   const parts = name.split(/[\s._-]+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "?";
 }
@@ -151,6 +154,8 @@ export function DashboardOverview({
       await utils.gmail.getSyncStatus.invalidate();
     },
   });
+  const gmailSyncPending = gmailSync.isPending;
+  const gmailSyncMutateAsync = gmailSync.mutateAsync;
   const lastAutomaticSyncAttempt = useRef(0);
 
   const events = api.calendar.searchEvents.useQuery(
@@ -168,7 +173,7 @@ export function DashboardOverview({
   const calendarState = connections.data?.googlecalendar;
   const isGmailConnected = gmailState === "connected";
   const isCalendarConnected = calendarState === "connected";
-  const greetingName = userName?.trim().split(/\s+/)[0] || "there";
+  const greetingName = userName?.trim().split(/\s+/).find(Boolean) ?? "there";
   const hour = currentTime?.getHours();
   const greeting =
     hour === undefined
@@ -203,18 +208,15 @@ export function DashboardOverview({
     : null;
   const isRefreshing =
     isSyncing ||
-    gmailSync.isPending ||
+    gmailSyncPending ||
     connections.isFetching ||
     recentMail.isFetching ||
     events.isFetching;
 
-  // Keep the Gmail index fresh while the dashboard is open. The server
-  // mutation performs the real Gmail API sync; refetching searchEmails alone
-  // would only read the existing PostgreSQL index.
   useEffect(() => {
     const maybeSyncMailbox = () => {
       const state = gmailSyncStatus.data;
-      if (!state || !isGmailConnected || gmailSync.isPending) return;
+      if (!state || !isGmailConnected || gmailSyncPending) return;
 
       const now = Date.now();
       const lastSyncAge = state.lastSyncedAt
@@ -234,7 +236,7 @@ export function DashboardOverview({
       if (!due || now - lastAutomaticSyncAttempt.current < 5 * 60_000) return;
 
       lastAutomaticSyncAttempt.current = now;
-      void gmailSync.mutateAsync().catch(() => {
+      void gmailSyncMutateAsync().catch(() => {
         // The authoritative failure and message are persisted in sync state.
       });
     };
@@ -244,8 +246,8 @@ export function DashboardOverview({
     return () => window.clearInterval(interval);
   }, [
     gmailSyncStatus.data,
-    gmailSync.isPending,
-    gmailSync.mutateAsync,
+    gmailSyncPending,
+    gmailSyncMutateAsync,
     isGmailConnected,
   ]);
 
@@ -349,7 +351,7 @@ export function DashboardOverview({
               Calendar <StatusDot connected={isCalendarConnected} loading={connections.isLoading} />
             </span>
             <span className="mt-1 block truncate text-lg font-semibold tracking-tight">
-              {events.isLoading ? "Loading schedule" : nextEvent?.summary || "No upcoming events"}
+              {events.isLoading ? "Loading schedule" : nextEvent?.summary ?? "No upcoming events"}
             </span>
             <span className="mt-0.5 block text-[11px] text-muted-foreground">
               {nextEvent ? formatEventWhen(nextEvent.start, nextEvent.end) : isCalendarConnected ? "Your schedule is clear" : "Check Calendar connection"}

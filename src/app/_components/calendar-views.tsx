@@ -37,13 +37,6 @@ function addDays(value: Date, amount: number) {
   return result;
 }
 
-function addMonths(value: Date, amount: number) {
-  const result = new Date(value);
-  result.setDate(1);
-  result.setMonth(result.getMonth() + amount);
-  return result;
-}
-
 function isSameDay(left: Date, right: Date) {
   return (
     left.getFullYear() === right.getFullYear() &&
@@ -84,10 +77,6 @@ function eventOccursOnDay(event: CalendarEvent, day: Date) {
   return start < dayEnd && end > dayStart;
 }
 
-function eventStartsOnDay(event: CalendarEvent, day: Date) {
-  return isSameDay(eventDateTime(event.start), day);
-}
-
 function eventTimeLabel(event: CalendarEvent) {
   if (event.start.type === "allDay") return "All day";
 
@@ -110,23 +99,6 @@ function shortTimeLabel(value: Date) {
 
 function dayLabel(value: Date, options: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat("en-US", options).format(value);
-}
-
-function eventColor(colorId?: string) {
-  const colors: Record<string, string> = {
-    "1": "#7986cb",
-    "2": "#33b679",
-    "3": "#8e24aa",
-    "4": "#e67c73",
-    "5": "#f6c344",
-    "6": "#f4511e",
-    "7": "#039be5",
-    "8": "#616161",
-    "9": "#3f51b5",
-    "10": "#0b8043",
-    "11": "#d50000",
-  };
-  return colors[colorId ?? ""] ?? "currentColor";
 }
 
 function eventDotClass(event: CalendarEvent) {
@@ -408,6 +380,7 @@ function TimeGrid({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState<number | null>(null);
+  const hasToday = days.some(isToday);
 
   useEffect(() => {
     const update = () => setCurrentTime(new Date().getHours() * 60 + new Date().getMinutes());
@@ -417,7 +390,6 @@ function TimeGrid({
   }, []);
 
   useEffect(() => {
-    const hasToday = days.some(isToday);
     const now = new Date();
     const initialHour = hasToday ? Math.max(0, now.getHours() - 1) : 8;
     const initialMinute = hasToday ? now.getMinutes() : 0;
@@ -430,7 +402,7 @@ function TimeGrid({
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [days[0]?.getTime(), days.length]);
+  }, [hasToday, days.length]);
 
   return (
     <div className="hidden min-w-0 md:block">

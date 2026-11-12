@@ -14,7 +14,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { CalendarEvent as NormalizedCalendarEvent, CalendarView } from "@/types/calendar";
 import { api } from "@/trpc/react";
@@ -265,6 +265,8 @@ export function CalendarPanel({
       await utils.calendar.searchEvents.invalidate();
     },
   });
+  const refreshEventsPending = refreshEvents.isPending;
+  const refreshEventsMutate = refreshEvents.mutate;
 
   const autoRefreshedRange = useRef<string | null>(null);
   const rangeKey = `${range.start.toISOString()}|${range.end.toISOString()}`;
@@ -274,14 +276,14 @@ export function CalendarPanel({
       events.isLoading ||
       events.isFetching ||
       events.error ||
-      refreshEvents.isPending ||
+      refreshEventsPending ||
       autoRefreshedRange.current === rangeKey
     ) {
       return;
     }
 
     autoRefreshedRange.current = rangeKey;
-    refreshEvents.mutate({
+    refreshEventsMutate({
       start: range.start.toISOString(),
       end: range.end.toISOString(),
       timeZone,
@@ -290,8 +292,8 @@ export function CalendarPanel({
     events.isLoading,
     events.isFetching,
     events.error,
-    refreshEvents.isPending,
-    refreshEvents.mutate,
+    refreshEventsPending,
+    refreshEventsMutate,
     rangeKey,
     range.start,
     range.end,
@@ -315,6 +317,11 @@ export function CalendarPanel({
       setCreateOpen(false);
     },
   });
+  const formErrorMessage = formError?.trim();
+  const mutationErrorMessage = createDraft.error?.message ?? sendInvite.error?.message;
+  const visibleFormError = [formErrorMessage, mutationErrorMessage].find(
+    (message): message is string => Boolean(message),
+  );
 
   const updateEvent = api.calendar.updateEvent.useMutation({
     onSuccess: async () => {
@@ -848,9 +855,9 @@ export function CalendarPanel({
               <p className="text-[11px] text-muted-foreground">Separate multiple guests with commas.</p>
             </section>
 
-            {(formError || createDraft.error || sendInvite.error) && (
+            {visibleFormError && (
               <p role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {formError ?? createDraft.error?.message ?? sendInvite.error?.message}
+                {visibleFormError}
               </p>
             )}
           </div>
